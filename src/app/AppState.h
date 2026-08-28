@@ -1,11 +1,28 @@
 #pragma once
 
+#include "app/Capture.h"
 #include "app/Settings.h"
+#include "platform/Screen.h"
 
 #include <string>
+#include <vector>
 
 namespace daveshot
 {
+    // Where a capture is in its sequence. A capture is not one call: the
+    // window has to get out of the way, the desktop has to be given a moment
+    // to repaint without it, a countdown may have to run, and a region
+    // capture then hands control to the overlay. Each of those is a frame
+    // boundary, so the sequence is a state machine rather than a function.
+    enum class CapturePhase
+    {
+        Idle,
+        Countdown,     // the user asked for a delay; waiting it out
+        Hiding,        // window hidden, waiting for the desktop to repaint
+        Selecting,     // region overlay is up, user is dragging
+        Finishing,     // shot taken, window coming back
+    };
+
     // The whole of the application's state. The drawing code reads this and
     // writes back into it; it does not own it, and nothing here knows that
     // ImGui exists -- which is what lets the tests build a state, run the
@@ -14,17 +31,57 @@ namespace daveshot
     {
         Settings settings;
 
-        // --- Window visibility ------------------------------------------
+        // --- Captures ------------------------------------------------------
+        History        history;
+        unsigned       selectedShotId = 0;   // 0 means "the newest"
+        CaptureRequest request;              // what the capture buttons will do
+
+        CapturePhase phase        = CapturePhase::Idle;
+        double       phaseUntil   = 0.0;     // seconds, on the app clock
+        double       countdownEnd = 0.0;     // for the "3.. 2.. 1" readout
+
+        // The frozen desktop the region overlay draws and crops out of, and
+        // where on the virtual desktop its top-left corner sits.
+        Image backdrop;
+        Rect  backdropBounds;
+
+        // Selection in backdrop image space. Screen coordinates are this plus
+        // backdropBounds' origin.
+        bool selecting     = false;
+        int  selectAnchorX = 0;
+        int  selectAnchorY = 0;
+        Rect selection;
+
+        // --- Pickers -------------------------------------------------------
+        std::vector<screen::MonitorInfo> monitors;
+        std::vector<screen::WindowInfo>  windows;
+        bool windowListStale = true;
+
+        // --- Window visibility ---------------------------------------------
         bool showAbout    = false;   // always opened as a modal, see AboutDialog
         bool showSettings = true;
-        bool showDemo     = false;   // ImGui's own demo, handy while building
+        bool showHistory  = true;
+        bool showDemo     = false;
 
         // True until the docking layout has been arranged. Set false at
         // startup when a saved layout exists, so a user's own arrangement is
         // never stomped by the default one.
         bool layoutPending = true;
 
-        // --- Transient ---------------------------------------------------
+        // --- Intent raised by the interface, acted on by the frame loop ----
+        // The panels never take a capture themselves: they set these, and the
+        // loop -- which is the only thing holding the window and the screen
+        // -- does the work between frames. That is what keeps every panel
+        // testable without a screen.
+        bool pendingRequest   = false;
+        bool pendingSelection = false;
+        bool cancelRequested  = false;
+        bool saveRequested    = false;
+        bool copyRequested    = false;
+        bool copyPathRequested = false;
+        bool revealRequested  = false;
+
+        // --- Transient -----------------------------------------------------
         bool        quitRequested = false;
         std::string status = "Ready";
 
@@ -35,21 +92,45 @@ namespace daveshot
         // Bumped when uiScale or theme changes, so the frame loop knows to
         // rebuild the style and font atlas. Applying either mid-frame gives
         // inconsistent metrics for the rest of that frame.
-        unsigned styleRevision = 1;
+        unsigned styleRevision        = 1;
         unsigned appliedStyleRevision = 0;
+
+        // Raised when a hotkey setting changes, so the loop re-registers.
+        unsigned hotkeyRevision        = 1;
+        unsigned appliedHotkeyRevision = 0;
 
         // Where settings.txt lives. Resolved from the executable directory at
         // startup; empty in tests, which do not persist anything.
         std::string settingsPath;
     };
 
-    // The two mutators the UI uses. They exist here rather than inline in the
-    // UI so the "changing this invalidates the style" rule has one home.
+    // The mutators the UI uses. They live here rather than inline in the UI so
+    // that "changing this invalidates that" has one home.
     void SetUiScale(AppState& state, float scale);
     void SetTheme(AppState& state, const std::string& themeName);
+    void SetHotkeys(AppState& state, const std::string& region, const std::string& screen,
+                    bool enabled);
 
     bool StyleNeedsRebuild(const AppState& state);
     void MarkStyleApplied(AppState& state);
+    bool HotkeysNeedRegistering(const AppState& state);
+    void MarkHotkeysApplied(AppState& state);
 
     void ReportError(AppState& state, const std::string& message);
+
+    // The shot the preview is showing: the selected one, or the newest when
+    // nothing is selected. Null when nothing has been captured yet.
+    const Shot* CurrentShot(const AppState& state);
+    Shot*       CurrentShot(AppState& state);
+
+    // Records a finished capture, selects it, and returns a reference to it.
+    Shot& AcceptShot(AppState& state, Shot shot);
+
+    // Whether a capture is in flight. The interface hides itself and stops
+    // accepting new capture requests while one is.
+    bool CaptureInProgress(const AppState& state);
+
+    // Seconds left on the countdown, rounded up for display. Zero when there
+    // is no countdown running.
+    int CountdownRemaining(const AppState& state, double now);
 }
