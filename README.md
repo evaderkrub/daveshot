@@ -1,28 +1,48 @@
 # daveshot
 
-A native desktop screen-capture tool for Windows: C++20, SDL3 for the window
-and input, Dear ImGui (docking branch) for the interface.
+A screen capture tool for Windows. C++20, SDL3 for the window and input, Dear
+ImGui (docking branch) for the interface. The build is a folder you can copy to
+another machine and run.
 
-**This repository is currently the skeleton, not the product.** A window
-opens, the interface responds, the build produces a folder you can copy to
-another machine, and the test binaries pass. Capture itself is the next piece
-of work — the `Capture` button and its menu item are present and deliberately
-inert.
+## What it does
 
-What is here today:
+**Capture**
 
-- A dockable interface: a workspace panel, a settings panel, an always-modal
-  About box, and ImGui's demo window for reference while building.
-- Five themes built from fwcom's 17-token colour system, switchable at
-  runtime.
-- A UI scale control, from 0.75x to 3x, applied on top of the display's own
-  DPI scale. Both style metrics and text scale together.
-- Settings (theme and scale) persisted to `daveshot_settings.txt` beside the
-  executable.
-- Open Sans for UI text with Material Icons merged in, and Fira Code for
-  fixed-width text — all loaded from `assets/` beside the executable.
-- Two console test binaries, one of which drives the real interface through
-  the Dear ImGui Test Engine.
+- **Region** — freezes the desktop, dims it, and you drag out a rectangle.
+  Live dimensions follow the drag. Hovering outlines the window under the
+  cursor, and a click with no drag takes that whole window, so the common case
+  needs no aiming.
+- **Window** — one top-level window from a list of what is open, captured by
+  asking it to redraw off-screen, so anything covering it stays out of the
+  shot.
+- **Full screen** — every monitor as one image, or one monitor on its own.
+- **Delayed** — a countdown of up to ten seconds before any of the above, for
+  capturing a menu or a hover state.
+
+daveshot hides its own window while capturing and waits for the desktop to
+repaint, so it never appears in its own screenshots.
+
+**Global hotkeys** work while daveshot is behind whatever you want a picture
+of. `Ctrl+Shift+S` takes a region and `PrintScreen` takes the full screen by
+default; both are configurable, and a combination another application already
+owns is reported rather than silently ignored.
+
+**After a capture** the shot appears in the preview, goes on the clipboard, and
+is written to `Pictures\daveshot` as a timestamped PNG. All three are
+configurable — folder, filename pattern, PNG or JPEG with a quality setting,
+and whether the copy and the save happen automatically. `Copy path` puts the
+file's path on the clipboard as text, for when the file is going into a message
+or a command line rather than into a document. `Show in folder` opens Explorer
+with it selected.
+
+**History** keeps this session's captures as a thumbnail strip; clicking one
+brings it back into the preview. The limit is a memory decision as much as a
+presentation one — a 4K capture is about 33 MB — so it is a setting, and old
+captures are dropped rather than paged out.
+
+**The interface** is dockable, and the layout is remembered. Five themes, and a
+UI scale from 0.75x to 3x that moves both the style metrics and the text, on
+top of whatever the display's own DPI scale is.
 
 ## Building
 
@@ -62,10 +82,11 @@ C:/buildfiles/daveshot/release/stage/
 
 Copy that folder anywhere and run it. The executable links SDL3, ImGui and the
 CRT statically, so it depends on nothing but Windows' own DLLs, and every
-runtime path is resolved against the executable's own directory rather than
-the working directory — launching from a shortcut or another drive gives a
+runtime path is resolved against the executable's own directory rather than the
+working directory — launching from a shortcut or another drive gives a
 different working directory, and that is the usual way a portable build stops
-being portable.
+being portable. Settings and the window layout are written beside the
+executable, so the folder carries its own configuration.
 
 ## Testing
 
@@ -75,17 +96,21 @@ ctest --preset debug        # both binaries
 
 or run them directly out of the stage folder:
 
-- `daveshot_test_app.exe` — the state layer with no window and no ImGui
-  context: settings parsing and clamping, the file round trip, path
-  resolution, and the rule that decides when the style needs rebuilding.
+- `daveshot_test_app.exe` — the state layer, with no window, no ImGui context
+  and no screen: settings parsing and clamping, filename patterns and
+  collisions, cropping and downscaling, the history limit, and the capture
+  sequence itself. The sequence is tested against a fake screen, which is how
+  rules like *the window must come back even when the grab failed* and *the
+  desktop gets time to repaint before the shutter* get covered without a
+  display.
 - `daveshot_test_ui.exe` — end-to-end tests driven by the Dear ImGui Test
   Engine against a real ImGui context with no window and no GPU. It clicks
-  through the actual `ui::Draw` the application runs: opening the About box
-  and asserting it really is modal, changing the UI scale and checking both
-  the metrics and the text moved, switching themes, and quitting from the
-  menu.
+  through the actual `ui::Draw` the application runs: capture buttons raising
+  requests and locking while one is in flight, the preview toolbar, the history
+  strip, the About box being genuinely modal, errors surfacing as a modal, the
+  UI scale moving both metrics and text, and the overlay taking over the window.
 
-Both print a one-line summary and return non-zero on failure.
+Both print a one-line summary per test and return non-zero on failure.
 
 ## Layout
 
@@ -102,22 +127,42 @@ assets/               fonts, icons, licences
 tests/                console test binaries
 ```
 
-`src/ui/AppLoop.cpp` is the composition root — it opens the window, loads
-settings and fonts, and runs the frame loop. It sits under `src/ui` because it
-exists to drive the drawing; that is what keeps `main.cpp` a single line and
-`src/app` free of ImGui.
+The rule that keeps this honest: **the panels never capture anything.** A
+button sets a flag on `AppState`; the frame loop in `src/ui/AppLoop.cpp` — the
+only thing holding the window and the screen — acts on it between frames. That
+is what lets every panel be tested with no screen attached, and it is why
+`src/app/CaptureFlow.cpp` takes its effects through an interface rather than
+calling the platform layer directly.
+
+`src/ui/AppLoop.cpp` is also the composition root. It sits under `src/ui`
+because it exists to drive the drawing; that is what keeps `main.cpp` a single
+line and `src/app` free of ImGui.
 
 ## Conventions
 
-- `/W4 /permissive- /WX` under MSVC. Third-party headers are included as
-  system headers so their warnings cannot fail our build, and ours are not
-  silenced.
+- `/W4 /permissive- /WX` under MSVC. Third-party headers are included as system
+  headers so their warnings cannot fail our build, and ours are not silenced.
 - The drawing code reads application state and does not own it. State lives in
   plain structs in `src/app` that the console tests exercise without a window.
-- No exceptions across module boundaries. Failures return `false` plus an
-  error string the interface can show; `AppState::error` is drained into a
-  modal.
+- No exceptions across module boundaries. Failures return `false` plus an error
+  string the interface can show; `AppState::error` is drained into a modal.
 - Comments explain why a thing is the way it is, not what the line does.
+
+## Notes and limits
+
+- **Windows only.** The capture path is Win32 — GDI for reading the screen, DWM
+  for a window's true visible bounds, WIC for writing PNG and JPEG without
+  linking an encoder, and the shell for known folders. `src/platform/Paths.cpp`
+  has POSIX branches; nothing else does.
+- **PrintScreen may already be taken.** Windows 11 binds it to the Snipping
+  Tool by default, and on a machine where something else holds a combination,
+  Windows gives it to whoever asked first. If a hotkey does nothing, pick
+  another one in Settings — the tested-working combinations here were
+  `Ctrl+Shift+A` and the in-app buttons.
+- **No annotation.** Arrows, boxes, text and blur are not implemented; a
+  capture goes to the clipboard and to disk as it was taken.
+- **History lives in memory only.** It is a session's worth of captures, not a
+  library. Saved files persist; the strip does not survive a restart.
 
 ## Copied from fwcom
 
@@ -128,8 +173,9 @@ The look is carried over from `fwcom` rather than reinvented:
   mapping were dropped; the "Wili Dark" palette is kept as one of the themes.
 - `src/ui/IconsMaterialDesign.h` — the Material Icons name constants,
   unchanged.
-- `assets/fonts`, `assets/icons` — Open Sans, Fira Code and Material Icons,
-  the same files fwcom uses, with Open Sans' OFL licence alongside them.
+- `assets/fonts`, `assets/icons` — Open Sans, Fira Code and Material Icons, the
+  same files fwcom uses, with Open Sans' OFL licence alongside them.
 
 fwcom's FreeWili branding — the logo images and application icon — was
-deliberately not copied, since this is a different application.
+deliberately not copied, since this is a different application. daveshot has no
+window icon of its own yet.
