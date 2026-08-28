@@ -1,0 +1,10 @@
+#pragma once
+
+// Generated from cmake/Version.h.in -- edit the project() version in
+// CMakeLists.txt, not this file.
+namespace daveshot
+{
+    inline constexpr const char* kAppName    = "@PROJECT_NAME@";
+    inline constexpr const char* kAppVersion = "@PROJECT_VERSION@";
+    inline constexpr const char* kAppSummary = "@PROJECT_DESCRIPTION@";
+}

@@ -1,0 +1,10 @@
+# Build output lives in C:/buildfiles, never in the source tree, but keep the
+# usual suspects out anyway in case someone configures in place.
+build/
+out/
+cmake-build-*/
+.vs/
+.vscode/
+*.user
+CMakeUserPresets.json
+compile_commands.json
