@@ -1,16 +1,13 @@
 #include "ui/UiRoot.h"
 
 #include "app/AppState.h"
-#include "daveshot/Version.h"
+#include "app/CaptureFlow.h"
 #include "ui/AboutDialog.h"
-#include "ui/Fonts.h"
 #include "ui/IconsMaterialDesign.h"
-#include "ui/Theme.h"
+#include "ui/Textures.h"
 
 #include "imgui.h"
 #include "imgui_internal.h"   // DockBuilder, for the first-run layout
-
-#include <cstdio>
 
 namespace daveshot::ui
 {
@@ -25,12 +22,31 @@ namespace
         if (!ImGui::BeginMainMenuBar())
             return;
 
+        const bool idle = !CaptureInProgress(state);
+
         if (ImGui::BeginMenu("File"))
         {
-            if (ImGui::MenuItem(ICON_MD_PHOTO_CAMERA "  Capture###Capture", "PrtScn", false, false))
+            if (ImGui::MenuItem(ICON_MD_CROP "  Capture region###MenuRegion",
+                                state.settings.hotkeyRegion.c_str(), false, idle))
             {
-                // Deliberately disabled: capture is the next piece of work.
+                state.request.mode = CaptureMode::Region;
+                state.pendingRequest = true;
             }
+            if (ImGui::MenuItem(ICON_MD_DESKTOP_WINDOWS "  Capture full screen###MenuFullScreen",
+                                state.settings.hotkeyScreen.c_str(), false, idle))
+            {
+                state.request.mode = CaptureMode::FullScreen;
+                state.pendingRequest = true;
+            }
+
+            ImGui::Separator();
+
+            const bool haveShot = CurrentShot(state) != nullptr;
+            if (ImGui::MenuItem(ICON_MD_SAVE "  Save###MenuSave", "Ctrl+S", false, haveShot))
+                state.saveRequested = true;
+            if (ImGui::MenuItem(ICON_MD_CONTENT_COPY "  Copy###MenuCopy", "Ctrl+C", false, haveShot))
+                state.copyRequested = true;
+
             ImGui::Separator();
             if (ImGui::MenuItem(ICON_MD_CLOSE "  Quit###Quit", "Alt+F4"))
                 state.quitRequested = true;
@@ -39,8 +55,8 @@ namespace
 
         if (ImGui::BeginMenu("View"))
         {
-            ImGui::MenuItem(kWindowWorkspace, nullptr, false, false);
             ImGui::MenuItem(kWindowSettings, nullptr, &state.showSettings);
+            ImGui::MenuItem(kWindowHistory, nullptr, &state.showHistory);
             ImGui::Separator();
             ImGui::MenuItem("ImGui Demo", nullptr, &state.showDemo);
             ImGui::EndMenu();
@@ -63,86 +79,34 @@ namespace
         ImGui::EndMainMenuBar();
     }
 
-    void DrawSettingsWindow(AppState& state)
+    // Without this the panels come up floating over the dockspace on a first
+    // run, and since WindowBg and DockingEmptyBg are the same colour with no
+    // window border, they read as text scattered on an empty background.
+    void BuildDefaultLayout(ImGuiID dockspaceId)
     {
-        if (!state.showSettings)
-            return;
+        ImGui::DockBuilderRemoveNode(dockspaceId);
+        ImGui::DockBuilderAddNode(dockspaceId, ImGuiDockNodeFlags_DockSpace);
+        ImGui::DockBuilderSetNodeSize(dockspaceId, ImGui::GetMainViewport()->WorkSize);
 
-        ImGui::SetNextWindowSize(ImVec2(360, 260), ImGuiCond_FirstUseEver);
-        if (ImGui::Begin(kWindowSettings, &state.showSettings))
-        {
-            ImGui::SeparatorText("Appearance");
+        ImGuiID centre = dockspaceId;
+        ImGuiID left   = 0;
+        ImGuiID right  = 0;
+        ImGuiID bottom = 0;
 
-            int themeIndex = theme::CurrentIndex();
-            if (ImGui::BeginCombo("Theme", theme::At(themeIndex).name))
-            {
-                for (int i = 0; i < theme::Count(); ++i)
-                {
-                    const bool selected = (i == themeIndex);
-                    if (ImGui::Selectable(theme::At(i).name, selected))
-                        SetTheme(state, theme::At(i).name);
-                    if (selected)
-                        ImGui::SetItemDefaultFocus();
-                }
-                ImGui::EndCombo();
-            }
+        ImGui::DockBuilderSplitNode(centre, ImGuiDir_Left,  0.24f, &left,   &centre);
+        ImGui::DockBuilderSplitNode(centre, ImGuiDir_Right, 0.28f, &right,  &centre);
+        ImGui::DockBuilderSplitNode(centre, ImGuiDir_Down,  0.26f, &bottom, &centre);
 
-            // The slider writes through SetUiScale so the style-rebuild flag
-            // is raised in exactly one place; the rebuild itself happens
-            // between frames, never here.
-            float scale = state.settings.uiScale;
-            if (ImGui::SliderFloat("UI scale", &scale,
-                                   Settings::kMinScale, Settings::kMaxScale, "%.2fx"))
-                SetUiScale(state, scale);
-
-            ImGui::SameLine();
-            if (ImGui::SmallButton("Reset##scale"))
-                SetUiScale(state, 1.0f);
-
-            ImGui::Spacing();
-            ImGui::TextDisabled("Fonts loaded at %.0f px, drawn at %.0f px",
-                                (double)fonts::BaseSize(),
-                                (double)(fonts::BaseSize() * state.settings.uiScale));
-        }
-        ImGui::End();
+        ImGui::DockBuilderDockWindow(kWindowCapture,  left);
+        ImGui::DockBuilderDockWindow(kWindowPreview,  centre);
+        ImGui::DockBuilderDockWindow(kWindowSettings, right);
+        ImGui::DockBuilderDockWindow(kWindowHistory,  bottom);
+        ImGui::DockBuilderFinish(dockspaceId);
     }
 
-    void DrawWorkspaceWindow(AppState& state)
-    {
-        ImGui::SetNextWindowSize(ImVec2(520, 320), ImGuiCond_FirstUseEver);
-        if (ImGui::Begin(kWindowWorkspace))
-        {
-            ImGui::PushFont(fonts::UiBold(), 0.0f);
-            ImGui::TextUnformatted(ICON_MD_PHOTO_CAMERA "  daveshot");
-            ImGui::PopFont();
-
-            ImGui::TextWrapped("%s", kAppSummary);
-            ImGui::Spacing();
-            ImGui::Separator();
-            ImGui::Spacing();
-
-            ImGui::TextDisabled("Nothing is captured yet -- this build is the "
-                                "shell: window, docking, theming, fonts, "
-                                "settings and the test harness.");
-
-            ImGui::Spacing();
-            if (ImGui::Button(ICON_MD_PHOTO_CAMERA "  Capture###Capture"))
-                state.status = "Capture is not implemented yet";
-            ImGui::SameLine();
-            if (ImGui::Button(ICON_MD_INFO "  About###About"))
-                state.showAbout = true;
-
-            ImGui::Spacing();
-            ImGui::PushFont(fonts::Mono(), 0.0f);
-            ImGui::TextUnformatted("assets and settings resolve from the exe folder");
-            ImGui::PopFont();
-        }
-        ImGui::End();
-    }
-
-    // Errors from below the UI arrive as a string on the state; showing them
-    // is the interface's job, which is why nothing under src/app or
-    // src/platform throws.
+    // Errors from below the interface arrive as a string on the state;
+    // showing them is the interface's job, which is why nothing under
+    // src/app or src/platform throws.
     void DrawErrorDialog(AppState& state)
     {
         if (!state.error.empty() && !ImGui::IsPopupOpen("###DaveshotError"))
@@ -160,48 +124,60 @@ namespace
         ImGui::PopTextWrapPos();
 
         ImGui::Separator();
-        if (ImGui::Button("OK"))
+        if (ImGui::Button("OK") || ImGui::IsKeyPressed(ImGuiKey_Escape))
         {
             state.error.clear();
             ImGui::CloseCurrentPopup();
         }
         ImGui::EndPopup();
     }
+
+    // Window-level shortcuts, distinct from the global hotkeys: these work
+    // when daveshot has focus and do not need registering with the OS.
+    void HandleShortcuts(AppState& state)
+    {
+        if (CurrentShot(state) == nullptr)
+            return;
+        if (ImGui::IsKeyChordPressed(ImGuiMod_Ctrl | ImGuiKey_S))
+            state.saveRequested = true;
+        if (ImGui::IsKeyChordPressed(ImGuiMod_Ctrl | ImGuiKey_C))
+            state.copyRequested = true;
+    }
 }
 
-void Draw(AppState& state)
+void Draw(AppState& state, TextureCache& textures)
 {
+    // The overlay owns the whole window while a region is being chosen.
+    // Drawing the panels underneath would let a click fall through to a
+    // button the user cannot see.
+    if (state.phase == CapturePhase::Selecting)
+    {
+        const OverlayResult overlay = DrawRegionOverlay(state, textures);
+        if (overlay.cancelled)
+            state.cancelRequested = true;
+        else if (overlay.committed)
+            state.pendingSelection = true;
+        return;
+    }
+
     DrawMenuBar(state);
+    HandleShortcuts(state);
 
-    // Docking host for everything below. AutoHideTabBar keeps a single
-    // undocked panel from growing a pointless tab strip.
     const ImGuiID dockspaceId = ImGui::GetID("DaveshotDockspace");
-    ImGui::DockSpaceOverViewport(dockspaceId, nullptr,
-                                 ImGuiDockNodeFlags_AutoHideTabBar);
+    ImGui::DockSpaceOverViewport(dockspaceId, nullptr, ImGuiDockNodeFlags_AutoHideTabBar);
 
-    // Without this the panels come up floating over the dockspace on a first
-    // run, and since WindowBg and DockingEmptyBg are the same colour with no
-    // window border, they read as text scattered on an empty background. Has
-    // to run after DockSpaceOverViewport created the node and before the
+    // Has to run after DockSpaceOverViewport created the node and before the
     // windows below are begun.
     if (state.layoutPending)
     {
         state.layoutPending = false;
-        ImGui::DockBuilderRemoveNode(dockspaceId);
-        ImGui::DockBuilderAddNode(dockspaceId, ImGuiDockNodeFlags_DockSpace);
-        ImGui::DockBuilderSetNodeSize(dockspaceId, ImGui::GetMainViewport()->WorkSize);
-
-        ImGuiID rightId  = 0;
-        ImGuiID centreId = 0;
-        ImGui::DockBuilderSplitNode(dockspaceId, ImGuiDir_Right, 0.28f,
-                                    &rightId, &centreId);
-        ImGui::DockBuilderDockWindow(kWindowWorkspace, centreId);
-        ImGui::DockBuilderDockWindow(kWindowSettings, rightId);
-        ImGui::DockBuilderFinish(dockspaceId);
+        BuildDefaultLayout(dockspaceId);
     }
 
-    DrawWorkspaceWindow(state);
-    DrawSettingsWindow(state);
+    DrawCapturePanel(state);
+    DrawPreviewPanel(state, textures);
+    DrawHistoryPanel(state, textures);
+    DrawSettingsPanel(state);
 
     if (state.showDemo)
         ImGui::ShowDemoWindow(&state.showDemo);

@@ -33,17 +33,42 @@ include(cmake/Warnings.cmake)
 # ---------------------------------------------------------------------------
 add_library(daveshot_core STATIC
     src/app/AppState.cpp
+    src/app/Capture.cpp
+    src/app/CaptureFlow.cpp
+    src/app/CaptureService.cpp
+    src/app/Image.cpp
+    src/app/Naming.cpp
     src/app/Settings.cpp
-    src/platform/Paths.cpp
+
+    src/platform/Clipboard.cpp
     src/platform/Host.cpp
+    src/platform/Hotkeys.cpp
+    src/platform/ImageIo.cpp
+    src/platform/Paths.cpp
+    src/platform/Screen.cpp
+
+    src/ui/AboutDialog.cpp
     src/ui/AppLoop.cpp
+    src/ui/CapturePanel.cpp
     src/ui/Fonts.cpp
+    src/ui/HistoryPanel.cpp
+    src/ui/PreviewPanel.cpp
+    src/ui/RegionOverlay.cpp
+    src/ui/SettingsPanel.cpp
+    src/ui/Textures.cpp
     src/ui/Theme.cpp
     src/ui/UiRoot.cpp
-    src/ui/AboutDialog.cpp
 )
 target_include_directories(daveshot_core PUBLIC src "${CMAKE_BINARY_DIR}/generated")
 target_link_libraries(daveshot_core PUBLIC daveshot_imgui SDL3::SDL3-static)
+
+# The capture path is Win32: GDI for reading the screen, DWM for a window's
+# real visible bounds, WIC for writing PNG and JPEG without linking an
+# encoder, and the shell for known folders and "show in folder".
+if(WIN32)
+    target_link_libraries(daveshot_core PUBLIC
+        dwmapi windowscodecs shell32 shlwapi)
+endif()
 daveshot_set_warnings(daveshot_core)
 
 # ---------------------------------------------------------------------------
