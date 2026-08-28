@@ -8,6 +8,7 @@
 #include "ui/Theme.h"
 
 #include "imgui.h"
+#include "imgui_internal.h"   // DockBuilder, for the first-run layout
 
 #include <cstdio>
 
@@ -174,8 +175,30 @@ void Draw(AppState& state)
 
     // Docking host for everything below. AutoHideTabBar keeps a single
     // undocked panel from growing a pointless tab strip.
-    ImGui::DockSpaceOverViewport(ImGui::GetID("DaveshotDockspace"), nullptr,
+    const ImGuiID dockspaceId = ImGui::GetID("DaveshotDockspace");
+    ImGui::DockSpaceOverViewport(dockspaceId, nullptr,
                                  ImGuiDockNodeFlags_AutoHideTabBar);
+
+    // Without this the panels come up floating over the dockspace on a first
+    // run, and since WindowBg and DockingEmptyBg are the same colour with no
+    // window border, they read as text scattered on an empty background. Has
+    // to run after DockSpaceOverViewport created the node and before the
+    // windows below are begun.
+    if (state.layoutPending)
+    {
+        state.layoutPending = false;
+        ImGui::DockBuilderRemoveNode(dockspaceId);
+        ImGui::DockBuilderAddNode(dockspaceId, ImGuiDockNodeFlags_DockSpace);
+        ImGui::DockBuilderSetNodeSize(dockspaceId, ImGui::GetMainViewport()->WorkSize);
+
+        ImGuiID rightId  = 0;
+        ImGuiID centreId = 0;
+        ImGui::DockBuilderSplitNode(dockspaceId, ImGuiDir_Right, 0.28f,
+                                    &rightId, &centreId);
+        ImGui::DockBuilderDockWindow(kWindowWorkspace, centreId);
+        ImGui::DockBuilderDockWindow(kWindowSettings, rightId);
+        ImGui::DockBuilderFinish(dockspaceId);
+    }
 
     DrawWorkspaceWindow(state);
     DrawSettingsWindow(state);

@@ -48,6 +48,11 @@ int RunApplication(int argc, char** argv)
     if (!LoadSettings(state.settingsPath, state.settings, settingsError))
         ReportError(state, settingsError);
 
+    // Checked before the window exists, because Host::Startup points ImGui at
+    // this file and ImGui writes it back out on exit -- after that it always
+    // exists, and "is this a first run" can no longer be asked.
+    state.layoutPending = !paths::Exists(paths::Beside("daveshot_layout.ini"));
+
     Host host;
     if (!host.Startup("daveshot", 1280, 800, error))
     {

@@ -19,6 +19,11 @@ namespace daveshot
         bool showSettings = true;
         bool showDemo     = false;   // ImGui's own demo, handy while building
 
+        // True until the docking layout has been arranged. Set false at
+        // startup when a saved layout exists, so a user's own arrangement is
+        // never stomped by the default one.
+        bool layoutPending = true;
+
         // --- Transient ---------------------------------------------------
         bool        quitRequested = false;
         std::string status = "Ready";
