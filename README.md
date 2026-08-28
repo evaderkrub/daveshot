@@ -186,5 +186,5 @@ The look is carried over from `fwcom` rather than reinvented:
   same files fwcom uses, with Open Sans' OFL licence alongside them.
 
 fwcom's FreeWili branding — the logo images and application icon — was
-deliberately not copied, since this is a different application. daveshot has no
-window icon of its own yet.
+deliberately not copied, since this is a different application; daveshot's icon
+is its own.
