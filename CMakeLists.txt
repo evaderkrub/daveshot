@@ -83,6 +83,11 @@ daveshot_set_warnings(daveshot)
 # is what supplies the WinMain that calls our main().
 if(WIN32)
     set_target_properties(daveshot PROPERTIES WIN32_EXECUTABLE TRUE)
+
+    # The icon is compiled into the executable rather than loaded from a file,
+    # so the staged folder cannot end up with a program that has lost its icon.
+    enable_language(RC)
+    target_sources(daveshot PRIVATE src/platform/daveshot.rc)
 endif()
 
 # Assets are staged beside the executable on every build, so running from the

@@ -1,0 +1,10 @@
+// Windows resources.
+//
+// Resource id 1 is deliberate: SDL3 takes the executable's first RT_GROUP_ICON
+// as the window class icon (EnumResourceNames in SDL_windowsevents.c), so this
+// one entry supplies the Explorer icon, the title-bar icon, the taskbar icon
+// and alt-tab, with no code and no icon file travelling beside the exe.
+//
+// The path is relative to this file, which is where the resource compiler
+// resolves it from.
+1 ICON "../../assets/icons/daveshot.ico"
