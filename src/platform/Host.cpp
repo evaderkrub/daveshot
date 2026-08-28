@@ -111,11 +111,114 @@ void Host::EndFrame(float clearR, float clearG, float clearB)
     SDL_RenderPresent(m_renderer);
 }
 
+double Host::Now() const
+{
+    return (double)SDL_GetTicksNS() / 1e9;
+}
+
+void Host::Hide()
+{
+    if (m_window)
+        SDL_HideWindow(m_window);
+}
+
+void Host::Show()
+{
+    if (m_window == nullptr)
+        return;
+    SDL_ShowWindow(m_window);
+    SDL_RaiseWindow(m_window);
+}
+
+bool Host::EnterOverlay(const Rect& desktop, std::string& error)
+{
+    if (m_window == nullptr)
+    {
+        error = "there is no window to put the overlay on";
+        return false;
+    }
+    if (m_inOverlay)
+        return true;
+
+    m_savedMaximised = (SDL_GetWindowFlags(m_window) & SDL_WINDOW_MAXIMIZED) != 0;
+    if (m_savedMaximised)
+        SDL_RestoreWindow(m_window);
+    SDL_GetWindowPosition(m_window, &m_savedGeometry.x, &m_savedGeometry.y);
+    SDL_GetWindowSize(m_window, &m_savedGeometry.w, &m_savedGeometry.h);
+
+    // Deliberately not SDL_SetWindowFullscreen: real fullscreen is per
+    // display, and a region selection has to be able to cross monitors. A
+    // borderless window sized to the whole virtual desktop can.
+    SDL_SetWindowBordered(m_window, false);
+    SDL_SetWindowResizable(m_window, false);
+    SDL_SetWindowAlwaysOnTop(m_window, true);
+    SDL_SetWindowPosition(m_window, desktop.x, desktop.y);
+    SDL_SetWindowSize(m_window, desktop.w, desktop.h);
+    SDL_ShowWindow(m_window);
+    SDL_RaiseWindow(m_window);
+
+    m_inOverlay = true;
+    return true;
+}
+
+void Host::LeaveOverlay()
+{
+    if (!m_inOverlay || m_window == nullptr)
+        return;
+
+    SDL_SetWindowAlwaysOnTop(m_window, false);
+    SDL_SetWindowBordered(m_window, true);
+    SDL_SetWindowResizable(m_window, true);
+    SDL_SetWindowSize(m_window, m_savedGeometry.w, m_savedGeometry.h);
+    SDL_SetWindowPosition(m_window, m_savedGeometry.x, m_savedGeometry.y);
+    if (m_savedMaximised)
+        SDL_MaximizeWindow(m_window);
+
+    m_inOverlay = false;
+}
+
+void Host::WindowPosition(int& x, int& y) const
+{
+    x = 0;
+    y = 0;
+    if (m_window)
+        SDL_GetWindowPosition(m_window, &x, &y);
+}
+
 float Host::DisplayScale() const
 {
     if (m_window == nullptr)
         return 1.0f;
     const float scale = SDL_GetWindowDisplayScale(m_window);
     return (scale > 0.0f) ? scale : 1.0f;
+}
+
+ImTextureID Host::CreateTexture(const Image& image)
+{
+    if (m_renderer == nullptr || !image.Valid())
+        return 0;
+
+    SDL_Texture* texture = SDL_CreateTexture(m_renderer, SDL_PIXELFORMAT_RGBA32,
+                                             SDL_TEXTUREACCESS_STATIC,
+                                             image.width, image.height);
+    if (texture == nullptr)
+        return 0;
+
+    if (!SDL_UpdateTexture(texture, nullptr, image.pixels.data(), image.width * 4))
+    {
+        SDL_DestroyTexture(texture);
+        return 0;
+    }
+
+    // Previews and thumbnails are almost always drawn smaller than the
+    // capture; nearest-neighbour would turn screenshot text into noise.
+    SDL_SetTextureScaleMode(texture, SDL_SCALEMODE_LINEAR);
+    return (ImTextureID)(intptr_t)texture;
+}
+
+void Host::DestroyTexture(ImTextureID texture)
+{
+    if (texture != 0)
+        SDL_DestroyTexture((SDL_Texture*)(intptr_t)texture);
 }
 }

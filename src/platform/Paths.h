@@ -33,4 +33,18 @@ namespace daveshot::paths
     std::FILE* OpenFile(const std::string& path, const char* mode);
 
     bool RemoveFile(const std::string& path);
+
+    // The user's Pictures folder, from the shell rather than from
+    // %USERPROFILE%: the folder is relocatable and plenty of people have
+    // moved it onto another drive or into OneDrive.
+    std::string PicturesFolder();
+
+    // Creates a directory and any missing parents. Succeeds if it is already
+    // there. Called before every save, because the configured folder can be
+    // deleted between one capture and the next.
+    bool EnsureFolder(const std::string& path, std::string& error);
+
+    // Opens the system file browser with this file selected, for the "show me
+    // where it went" affordance after a save.
+    bool RevealInFileBrowser(const std::string& path);
 }

@@ -1,5 +1,10 @@
 #pragma once
 
+#include "app/Geometry.h"
+#include "app/Image.h"
+
+#include "imgui.h"
+
 #include <string>
 
 struct SDL_Window;
@@ -7,8 +12,6 @@ struct SDL_Renderer;
 
 namespace daveshot
 {
-    struct AppState;
-
     // Owns the window, the renderer and the ImGui backends -- the parts that
     // talk to the OS. Nothing above this file includes SDL.
     //
@@ -32,9 +35,36 @@ namespace daveshot
         void BeginFrame();
         void EndFrame(float clearR, float clearG, float clearB);
 
-        // Points at the requested UI scale so the window's own DPI change can
-        // be folded in; see AppState::uiScale.
+        // Seconds since startup, monotonic. The capture sequence times its
+        // steps against this rather than against frame counts, because frames
+        // stop arriving while the window is hidden.
+        double Now() const;
+
+        // --- Window ---------------------------------------------------------
+        void Hide();
+        void Show();
+
+        // Borderless, always on top, covering the whole virtual desktop: the
+        // region-selection overlay. Remembers the ordinary window's geometry
+        // so LeaveOverlay puts it back exactly.
+        bool EnterOverlay(const Rect& desktop, std::string& error);
+        void LeaveOverlay();
+        bool InOverlay() const { return m_inOverlay; }
+
+        // Top-left of the window in desktop coordinates. The overlay adds
+        // this to ImGui's window-relative mouse position to get a screen
+        // coordinate.
+        void WindowPosition(int& x, int& y) const;
+
+        // The display's own scale factor, folded into the UI scale so 150% in
+        // Windows and 1.5x here compound the way a user expects.
         float DisplayScale() const;
+
+        // --- Textures -------------------------------------------------------
+        // Uploads an RGBA image. Returns 0 on failure. The caller owns the
+        // result and must hand it back to DestroyTexture.
+        ImTextureID CreateTexture(const Image& image);
+        void        DestroyTexture(ImTextureID texture);
 
         SDL_Window*   Window()   const { return m_window; }
         SDL_Renderer* Renderer() const { return m_renderer; }
@@ -45,5 +75,9 @@ namespace daveshot
         bool          m_imguiBackendsUp = false;
         bool          m_running  = true;
         std::string   m_iniPath;   // ImGui keeps the pointer, so we own the storage
+
+        bool m_inOverlay = false;
+        Rect m_savedGeometry;      // window position and size before the overlay
+        bool m_savedMaximised = false;
     };
 }

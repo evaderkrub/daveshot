@@ -1,11 +1,13 @@
 #include "platform/Paths.h"
 
 #include <cstdio>
+#include <cstdlib>
 #include <string>
 
 #ifdef _WIN32
 #  define WIN32_LEAN_AND_MEAN
 #  include <windows.h>
+#  include <shlobj.h>
 #else
 #  include <limits.h>
 #  include <unistd.h>
@@ -144,6 +146,85 @@ bool RemoveFile(const std::string& path)
     return _wremove(Utf8ToWide(path).c_str()) == 0;
 #else
     return std::remove(path.c_str()) == 0;
+#endif
+}
+}
+
+namespace daveshot::paths
+{
+std::string PicturesFolder()
+{
+#ifdef _WIN32
+    PWSTR    wide = nullptr;
+    std::string result;
+    if (SUCCEEDED(SHGetKnownFolderPath(FOLDERID_Pictures, 0, nullptr, &wide)))
+    {
+        const int bytes = WideCharToMultiByte(CP_UTF8, 0, wide, -1, nullptr, 0, nullptr, nullptr);
+        if (bytes > 1)
+        {
+            result.resize((size_t)bytes - 1);
+            WideCharToMultiByte(CP_UTF8, 0, wide, -1, result.data(), bytes, nullptr, nullptr);
+        }
+    }
+    if (wide != nullptr)
+        CoTaskMemFree(wide);
+
+    // No Pictures folder at all is exotic but not impossible (a stripped
+    // service account). Falling back beside the executable keeps captures
+    // going somewhere the user can find.
+    if (result.empty())
+        return ExeDir();
+    return result;
+#else
+    const char* home = std::getenv("HOME");
+    return home ? std::string(home) + "/Pictures" : ExeDir();
+#endif
+}
+
+bool EnsureFolder(const std::string& path, std::string& error)
+{
+    if (path.empty())
+    {
+        error = "no folder was given";
+        return false;
+    }
+
+#ifdef _WIN32
+    std::wstring wide = Utf8ToWide(path);
+    // SHCreateDirectoryExW builds the whole chain and takes backslashes only.
+    for (wchar_t& c : wide)
+        if (c == L'/')
+            c = L'\\';
+
+    const int result = SHCreateDirectoryExW(nullptr, wide.c_str(), nullptr);
+    if (result == ERROR_SUCCESS || result == ERROR_ALREADY_EXISTS ||
+        result == ERROR_FILE_EXISTS)
+        return true;
+
+    error = "could not create " + path;
+    return false;
+#else
+    error = "creating folders is not implemented on this platform";
+    return false;
+#endif
+}
+
+bool RevealInFileBrowser(const std::string& path)
+{
+#ifdef _WIN32
+    const std::wstring wide = Utf8ToWide(path);
+    // ILCreateFromPath + SHOpenFolderAndSelectItems selects the file rather
+    // than merely opening its folder, which is what "show it to me" means.
+    PIDLIST_ABSOLUTE item = ILCreateFromPathW(wide.c_str());
+    if (item == nullptr)
+        return false;
+
+    const HRESULT hr = SHOpenFolderAndSelectItems(item, 0, nullptr, 0);
+    ILFree(item);
+    return SUCCEEDED(hr);
+#else
+    (void)path;
+    return false;
 #endif
 }
 }
