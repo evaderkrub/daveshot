@@ -51,11 +51,33 @@ namespace
             return;
         }
 
-        if (!effects.EnterOverlay(state.backdropBounds, error))
+        Rect covered;
+        if (!effects.EnterOverlay(state.backdropBounds, covered, error))
         {
             ReportError(state, error);
             Finish(state, effects);
             return;
+        }
+
+        // An overlay that covers less than the whole desktop shows only its
+        // own part of the frozen picture, so the selection the user draws on
+        // it and the pixels underneath stay in the same space.
+        if (!covered.Empty() && covered != state.backdropBounds)
+        {
+            const Rect visible = Intersect(covered, state.backdropBounds);
+            Rect local = visible;
+            local.x -= state.backdropBounds.x;
+            local.y -= state.backdropBounds.y;
+
+            Image part;
+            if (visible.Empty() || !CropImage(state.backdrop, local, part))
+            {
+                ReportError(state, "the overlay is not on the captured desktop");
+                Finish(state, effects);
+                return;
+            }
+            state.backdrop       = std::move(part);
+            state.backdropBounds = visible;
         }
 
         state.selecting = false;
@@ -105,6 +127,30 @@ void TickCapture(AppState& state, CaptureEffects& effects, double now)
 
     case CapturePhase::Hiding:
     {
+        // The last moment the window is still up, and so the only moment the
+        // desktop will let us ask whether we may capture at all.
+        if (effects.NeedsCapturePermission())
+        {
+            std::string error;
+            if (!effects.RequestCapturePermission(error))
+            {
+                ReportError(state, error);
+                state.status = "Capture failed";
+                Finish(state, effects);
+                return;
+            }
+
+            // Asking blocks for as long as the user takes to answer, which
+            // leaves `now` stale by however long that was -- hiding against
+            // it would shoot before the window is off the screen. Going back
+            // through a countdown that has already expired restarts the hide
+            // on the next frame's clock, which is a fresh one.
+            state.phase        = CapturePhase::Countdown;
+            state.countdownEnd = now;
+            state.phaseUntil   = now;
+            return;
+        }
+
         // Hiding is requested every frame of this phase rather than once on
         // entry: it is idempotent, and it saves carrying a "have we hidden
         // yet" flag through a phase that exists only to wait.

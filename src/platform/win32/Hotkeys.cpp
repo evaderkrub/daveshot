@@ -226,4 +226,9 @@ void Drain(std::vector<Action>& out)
     out = gPending;
     gPending.clear();
 }
+
+std::string TakeError()
+{
+    return std::string();   // RegisterHotKey answers on the spot
+}
 }

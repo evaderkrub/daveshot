@@ -349,14 +349,29 @@ class FakeEffects final : public CaptureEffects
 {
 public:
     int  hides = 0, shows = 0, overlays = 0, leaves = 0, grabs = 0, desktopGrabs = 0;
+    int  permissionAsks = 0;
     bool grabSucceeds = true;
+    bool permissionNeeded = false;    // as on Windows and X11
+    bool permissionGranted = true;
+    Rect overlayCovers;   // empty: the whole desktop, as on Windows and X11
 
     void HideWindow() override { ++hides; }
     void ShowWindow() override { ++shows; }
 
-    bool EnterOverlay(const Rect&, std::string& error) override
+    bool NeedsCapturePermission() override { return permissionNeeded; }
+
+    bool RequestCapturePermission(std::string& error) override
+    {
+        ++permissionAsks;
+        if (!permissionGranted) { error = "permission refused"; return false; }
+        permissionNeeded = false;
+        return true;
+    }
+
+    bool EnterOverlay(const Rect& desktop, Rect& covered, std::string& error) override
     {
         ++overlays;
+        covered = overlayCovers.Empty() ? desktop : overlayCovers;
         if (!grabSucceeds) { error = "no overlay"; return false; }
         return true;
     }
@@ -446,6 +461,64 @@ void TestDelayCountdown()
     CHECK(effects.grabs == 1);
 }
 
+// Wayland's portal will not photograph the screen until the user has said
+// so, and the desktop only puts that question up while our window is up --
+// so the asking has to happen before the first hide, and the shot has to
+// wait out a fresh settle afterwards rather than firing against a clock that
+// went stale while the dialog was open.
+void TestPermissionIsAskedBeforeHiding()
+{
+    AppState state = QuietState();
+    FakeEffects effects;
+    effects.permissionNeeded = true;
+
+    CaptureRequest request;
+    request.mode = CaptureMode::FullScreen;
+
+    RequestCapture(state, request, 100.0);
+    TickCapture(state, effects, 100.0);
+    CHECK(effects.permissionAsks == 1);
+    CHECK(effects.hides == 0);      // asked with the window still on screen
+    CHECK(effects.grabs == 0);
+
+    // The user has been sitting on the dialog; the clock has moved on.
+    TickCapture(state, effects, 130.0);
+    CHECK(effects.permissionAsks == 1);   // never asked twice
+    CHECK(state.phase == CapturePhase::Hiding);
+
+    // The settle is measured from here and not from the stale 100: at half a
+    // settle past 130 the window has hidden but the shot has not been taken.
+    TickCapture(state, effects, 130.0 + kHideSettleSeconds * 0.5);
+    CHECK(effects.hides > 0);
+    CHECK(effects.grabs == 0);
+
+    TickCapture(state, effects, 130.0 + kHideSettleSeconds);
+    CHECK(effects.grabs == 1);
+    CHECK(state.phase == CapturePhase::Idle);
+    CHECK((int)state.history.shots.size() == 1);
+}
+
+void TestRefusedPermissionEndsTheCapture()
+{
+    AppState state = QuietState();
+    FakeEffects effects;
+    effects.permissionNeeded  = true;
+    effects.permissionGranted = false;
+
+    CaptureRequest request;
+    request.mode = CaptureMode::FullScreen;
+
+    RequestCapture(state, request, 0.0);
+    TickCapture(state, effects, 0.0);
+
+    CHECK(effects.permissionAsks == 1);
+    CHECK(effects.grabs == 0);
+    CHECK(state.phase == CapturePhase::Idle);
+    CHECK(effects.shows == 1);            // the window comes back either way
+    CHECK(!state.error.empty());
+    CHECK((int)state.history.shots.size() == 0);
+}
+
 void TestSecondRequestIsIgnored()
 {
     AppState state = QuietState();
@@ -501,6 +574,49 @@ void TestRegionSequence()
     CHECK(shot.image.width == 60 && shot.image.height == 40);
     CHECK(shot.source.x == -40);          // 10 + (-50)
     CHECK(shot.source.y == 20);
+}
+
+// Wayland can only put the overlay on one display. The sequence then has
+// to show that display's part of the frozen desktop and keep the selection
+// in the same coordinates, or a drag on the second monitor would crop pixels
+// from the first.
+void TestOverlayOnOneDisplayCropsTheBackdrop()
+{
+    AppState state = QuietState();
+    FakeEffects effects;
+    // The fake desktop is 200x100 at x=-50; the overlay covers only the
+    // right-hand 120x100 of it.
+    effects.overlayCovers = Rect{30, 0, 120, 100};
+
+    CaptureRequest request;
+    request.mode = CaptureMode::Region;
+    RequestCapture(state, request, 0.0);
+    TickCapture(state, effects, kHideSettleSeconds);
+
+    CHECK(state.phase == CapturePhase::Selecting);
+    CHECK(state.backdrop.width == 120 && state.backdrop.height == 100);
+    CHECK(state.backdropBounds == (Rect{30, 0, 120, 100}));
+
+    state.selection = Rect{10, 20, 60, 40};
+    CommitSelection(state, effects);
+
+    CHECK((int)state.history.shots.size() == 1);
+    const Shot& shot = state.history.shots.front();
+    CHECK(shot.image.width == 60 && shot.image.height == 40);
+    CHECK(shot.source.x == 40);           // 10 + 30: relative to what the overlay showed
+    CHECK(shot.source.y == 20);
+
+    // An overlay that lands somewhere the capture does not cover at all is
+    // an error, and the window still comes back.
+    AppState missed = QuietState();
+    FakeEffects elsewhere;
+    elsewhere.overlayCovers = Rect{5000, 5000, 100, 100};
+    RequestCapture(missed, request, 0.0);
+    TickCapture(missed, elsewhere, kHideSettleSeconds);
+    CHECK(missed.phase == CapturePhase::Idle);
+    CHECK(!missed.error.empty());
+    CHECK(elsewhere.leaves == 1);
+    CHECK(elsewhere.shows == 1);
 }
 
 void TestTinySelectionIsNotAShot()
@@ -657,9 +773,12 @@ int main(int argc, char** argv)
     TestShotLabels();
 
     TestDirectCaptureSequence();
+    TestPermissionIsAskedBeforeHiding();
+    TestRefusedPermissionEndsTheCapture();
     TestDelayCountdown();
     TestSecondRequestIsIgnored();
     TestRegionSequence();
+    TestOverlayOnOneDisplayCropsTheBackdrop();
     TestTinySelectionIsNotAShot();
     TestCancelRestoresTheWindow();
     TestFailedGrabIsReportedAndRecovers();

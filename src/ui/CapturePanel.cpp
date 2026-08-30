@@ -71,6 +71,24 @@ namespace
 
     void DrawWindowPicker(AppState& state)
     {
+        const screen::Features features = screen::Capabilities();
+        if (!features.windowList)
+        {
+            // Wayland: the desktop keeps its window list to itself and offers
+            // its own picker instead. The Window button hands over to it.
+            if (features.pickOnScreen)
+            {
+                state.request.windowHandle = screen::kPickWindowOnScreen;
+                ImGui::TextWrapped("The desktop chooses the window: press Window, "
+                                   "then pick it on screen.");
+            }
+            else
+            {
+                ImGui::TextDisabled("Window capture is not available here");
+            }
+            return;
+        }
+
         ImGui::AlignTextToFramePadding();
         ImGui::TextDisabled("Window");
         ImGui::SameLine();
@@ -149,9 +167,11 @@ void DrawCapturePanel(AppState& state)
     }
 
     const bool haveWindow = state.request.windowHandle != 0;
+    const bool pickOnScreen = state.request.windowHandle == screen::kPickWindowOnScreen;
     if (CaptureButton(ICON_MD_WEB_ASSET "  Window###CaptureWindow",
-                      haveWindow ? "Capture the selected window, even where it is covered"
-                                 : "Choose a window from the list below first",
+                      pickOnScreen ? "Choose the window on screen, in the desktop's own picker"
+                    : haveWindow   ? "Capture the selected window, even where it is covered"
+                                   : "Choose a window from the list below first",
                       idle && haveWindow))
     {
         state.request.mode = CaptureMode::Window;

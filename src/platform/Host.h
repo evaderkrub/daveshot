@@ -44,10 +44,21 @@ namespace daveshot
         void Hide();
         void Show();
 
+#ifdef __linux__
+        // The window in the form a desktop portal's `parent_window` argument
+        // takes, or empty while the window is hidden. See Session.h for why
+        // the portals care.
+        std::string PortalParentWindow() const;
+#endif
+
         // Borderless, always on top, covering the whole virtual desktop: the
         // region-selection overlay. Remembers the ordinary window's geometry
         // so LeaveOverlay puts it back exactly.
-        bool EnterOverlay(const Rect& desktop, std::string& error);
+        //
+        // `covered` comes back as the part of the desktop the overlay really
+        // occupies. That is all of it wherever a window can be placed across
+        // monitors; on Wayland it is the one display the window is on.
+        bool EnterOverlay(const Rect& desktop, Rect& covered, std::string& error);
         void LeaveOverlay();
         bool InOverlay() const { return m_inOverlay; }
 
@@ -77,6 +88,7 @@ namespace daveshot
         std::string   m_iniPath;   // ImGui keeps the pointer, so we own the storage
 
         bool m_inOverlay = false;
+        bool m_fullscreenOverlay = false;   // the Wayland form: one display, fullscreen
         Rect m_savedGeometry;      // window position and size before the overlay
         bool m_savedMaximised = false;
     };

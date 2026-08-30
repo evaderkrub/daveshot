@@ -1,5 +1,7 @@
 #include "platform/Paths.h"
 
+#include <cctype>
+#include <cerrno>
 #include <cstdio>
 #include <cstdlib>
 #include <string>
@@ -9,8 +11,13 @@
 #  include <windows.h>
 #  include <shlobj.h>
 #else
+#  include "platform/linux/Dbus.h"
 #  include <limits.h>
+#  include <spawn.h>
+#  include <sys/stat.h>
+#  include <sys/wait.h>
 #  include <unistd.h>
+extern char** environ;
 #endif
 
 namespace daveshot::paths
@@ -177,7 +184,46 @@ std::string PicturesFolder()
     return result;
 #else
     const char* home = std::getenv("HOME");
-    return home ? std::string(home) + "/Pictures" : ExeDir();
+    const std::string homeDir = home ? home : "";
+
+    // The Pictures folder is wherever xdg-user-dirs says it is. That file
+    // is a shell fragment -- XDG_PICTURES_DIR="$HOME/Pictures" -- and the
+    // only expansion it ever uses is $HOME, so that is the only one done.
+    const char* configHome = std::getenv("XDG_CONFIG_HOME");
+    const std::string configDir = (configHome && *configHome) ? configHome
+                                : homeDir.empty() ? "" : homeDir + "/.config";
+    if (!configDir.empty())
+    {
+        if (std::FILE* f = std::fopen((configDir + "/user-dirs.dirs").c_str(), "r"))
+        {
+            char line[1024];
+            std::string found;
+            while (std::fgets(line, sizeof(line), f))
+            {
+                std::string text(line);
+                const std::string key = "XDG_PICTURES_DIR=";
+                const size_t at = text.find(key);
+                if (at == std::string::npos || text.find('#') < at)
+                    continue;
+                std::string value = text.substr(at + key.size());
+                while (!value.empty() && (value.back() == '\n' || value.back() == '\r' ||
+                                          value.back() == ' '))
+                    value.pop_back();
+                if (value.size() >= 2 && value.front() == '"' && value.back() == '"')
+                    value = value.substr(1, value.size() - 2);
+                if (value.rfind("$HOME", 0) == 0)
+                    value = homeDir + value.substr(5);
+                found = value;
+            }
+            std::fclose(f);
+            if (!found.empty())
+                return found;
+        }
+    }
+
+    if (!homeDir.empty())
+        return homeDir + "/Pictures";
+    return ExeDir();
 #endif
 }
 
@@ -204,8 +250,30 @@ bool EnsureFolder(const std::string& path, std::string& error)
     error = "could not create " + path;
     return false;
 #else
-    error = "creating folders is not implemented on this platform";
-    return false;
+    // mkdir -p by hand: create each prefix in turn, and let "already there"
+    // pass, because the usual case is that every one of them is.
+    std::string prefix;
+    for (size_t i = 0; i <= path.size(); ++i)
+    {
+        if (i < path.size() && path[i] != '/')
+            continue;
+        prefix = path.substr(0, i);
+        if (prefix.empty())
+            continue;
+        if (mkdir(prefix.c_str(), 0755) != 0 && errno != EEXIST)
+        {
+            error = "could not create " + path;
+            return false;
+        }
+    }
+
+    struct stat info{};
+    if (stat(path.c_str(), &info) != 0 || !S_ISDIR(info.st_mode))
+    {
+        error = path + " is not a folder";
+        return false;
+    }
+    return true;
 #endif
 }
 
@@ -223,8 +291,66 @@ bool RevealInFileBrowser(const std::string& path)
     ILFree(item);
     return SUCCEEDED(hr);
 #else
-    (void)path;
-    return false;
+    // Every desktop file manager on the bus implements FileManager1, and
+    // ShowItems selects the file rather than merely opening its folder.
+    {
+        dbus::Connection& bus = dbus::Connection::Session();
+        std::string ignored;
+        if (bus.Open(ignored))
+        {
+            DBusMessage* message = dbus_message_new_method_call(
+                "org.freedesktop.FileManager1", "/org/freedesktop/FileManager1",
+                "org.freedesktop.FileManager1", "ShowItems");
+            if (message != nullptr)
+            {
+                std::string uri = "file://";
+                for (unsigned char c : path)
+                {
+                    if (std::isalnum(c) || c == '/' || c == '.' || c == '-' || c == '_' || c == '~')
+                        uri += (char)c;
+                    else
+                    {
+                        char escaped[4];
+                        std::snprintf(escaped, sizeof(escaped), "%%%02X", c);
+                        uri += escaped;
+                    }
+                }
+
+                DBusMessageIter args;
+                dbus_message_iter_init_append(message, &args);
+                DBusMessageIter list;
+                dbus_message_iter_open_container(&args, DBUS_TYPE_ARRAY, "s", &list);
+                const char* uriText = uri.c_str();
+                dbus_message_iter_append_basic(&list, DBUS_TYPE_STRING, &uriText);
+                dbus_message_iter_close_container(&args, &list);
+                const char* startupId = "";
+                dbus_message_iter_append_basic(&args, DBUS_TYPE_STRING, &startupId);
+
+                DBusMessage* reply = bus.Call(message, 5000, ignored);
+                dbus_message_unref(message);
+                if (reply != nullptr)
+                {
+                    dbus_message_unref(reply);
+                    return true;
+                }
+            }
+        }
+    }
+
+    // No file manager on the bus: open the folder with whatever handles
+    // folders, which at least gets the user to the right place.
+    std::string folder = path;
+    StripFilename(folder);
+    const char* argv[] = { "xdg-open", folder.c_str(), nullptr };
+    pid_t pid = 0;
+    if (posix_spawnp(&pid, "xdg-open", nullptr, nullptr,
+                     const_cast<char* const*>(argv), environ) != 0)
+        return false;
+    // xdg-open returns as soon as it has handed off; reaping it here keeps
+    // a zombie from sitting in the process table until we exit.
+    int status = 0;
+    waitpid(pid, &status, 0);
+    return WIFEXITED(status) && WEXITSTATUS(status) == 0;
 #endif
 }
 }

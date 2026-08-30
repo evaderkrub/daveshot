@@ -45,9 +45,20 @@ namespace
         void HideWindow() override { m_host.Hide(); }
         void ShowWindow() override { m_host.Show(); }
 
-        bool EnterOverlay(const Rect& desktop, std::string& error) override
+        bool NeedsCapturePermission() override { return screen::NeedsCapturePermission(); }
+
+        bool RequestCapturePermission(std::string& error) override
         {
-            return m_host.EnterOverlay(desktop, error);
+            // The desktop wants to see the window it is asking on behalf of,
+            // and a capture can start from a global hotkey with that window
+            // hidden. Put it back up first; this only ever runs once.
+            m_host.Show();
+            return screen::RequestCapturePermission(error);
+        }
+
+        bool EnterOverlay(const Rect& desktop, Rect& covered, std::string& error) override
+        {
+            return m_host.EnterOverlay(desktop, covered, error);
         }
 
         void LeaveOverlay() override
@@ -115,6 +126,10 @@ namespace
     {
         std::vector<hotkeys::Action> fired;
         hotkeys::Drain(fired);
+
+        const std::string late = hotkeys::TakeError();
+        if (!late.empty())
+            ReportError(state, late);
 
         for (hotkeys::Action action : fired)
         {

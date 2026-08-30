@@ -205,6 +205,11 @@ namespace
     }
 }
 
+Features Capabilities()
+{
+    return Features{};   // the defaults describe Windows
+}
+
 Rect VirtualDesktopBounds()
 {
     Rect r;
@@ -363,6 +368,16 @@ bool CaptureWindow(uint64_t handle, Image& out, std::string& error)
     if (!ok)
         return CaptureRect(bounds, out, error);
 
+    return true;
+}
+
+bool NeedsCapturePermission()
+{
+    return false;   // Windows lets any process read the screen
+}
+
+bool RequestCapturePermission(std::string&)
+{
     return true;
 }
 

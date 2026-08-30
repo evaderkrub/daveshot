@@ -1,6 +1,13 @@
 #include "platform/Host.h"
 
+#include "daveshot/Version.h"
 #include "platform/Paths.h"
+
+#ifdef __linux__
+#  include "platform/linux/ClipboardRetry.h"
+#  include "platform/linux/ImageCodec.h"
+#  include "platform/linux/Session.h"
+#endif
 
 #include <SDL3/SDL.h>
 
@@ -17,6 +24,14 @@ Host::~Host()
 
 bool Host::Startup(const char* title, int width, int height, std::string& error)
 {
+    // The identifier is what Wayland and the desktop portals know the
+    // window by; on Windows it is only metadata.
+#ifdef __linux__
+    SDL_SetAppMetadata(kAppName, kAppVersion, session::kAppId);
+#else
+    SDL_SetAppMetadata(kAppName, kAppVersion, nullptr);
+#endif
+
     if (!SDL_Init(SDL_INIT_VIDEO))
     {
         error = std::string("SDL_Init failed: ") + SDL_GetError();
@@ -32,7 +47,36 @@ bool Host::Startup(const char* title, int width, int height, std::string& error)
     }
 
     SDL_SetRenderVSync(m_renderer, 1);
+
+#ifdef __linux__
+    // Windows gets its icon from the resource compiled into the executable.
+    // Here it is the PNG the same artwork was rendered to, set on the window
+    // so the dock and the switcher have something other than a blank.
+    {
+        Image icon;
+        std::string ignored;
+        if (codec::DecodeFile(paths::Asset("icons/daveshot.png"), icon, ignored))
+        {
+            SDL_Surface* surface = SDL_CreateSurfaceFrom(icon.width, icon.height,
+                                                         SDL_PIXELFORMAT_RGBA32,
+                                                         icon.pixels.data(), icon.width * 4);
+            if (surface != nullptr)
+            {
+                SDL_SetWindowIcon(m_window, surface);   // takes a copy
+                SDL_DestroySurface(surface);
+            }
+        }
+    }
+#endif
+
     SDL_ShowWindow(m_window);
+
+#ifdef __linux__
+    // The portals need to be able to name our window -- see Session.h. The
+    // answer is read fresh on every call because it changes as the window is
+    // shown and hidden, and it is wrong exactly when the window is down.
+    session::SetParentWindowProvider([this] { return PortalParentWindow(); });
+#endif
 
     IMGUI_CHECKVERSION();
     ImGui::CreateContext();
@@ -84,6 +128,9 @@ bool Host::PumpEvents()
     while (SDL_PollEvent(&event))
     {
         ImGui_ImplSDL3_ProcessEvent(&event);
+#ifdef __linux__
+        clipboardretry::HandleEvent(event);
+#endif
 
         if (event.type == SDL_EVENT_QUIT)
             m_running = false;
@@ -91,6 +138,9 @@ bool Host::PumpEvents()
                  event.window.windowID == SDL_GetWindowID(m_window))
             m_running = false;
     }
+#ifdef __linux__
+    clipboardretry::Tick(m_window);
+#endif
     return m_running;
 }
 
@@ -116,6 +166,34 @@ double Host::Now() const
     return (double)SDL_GetTicksNS() / 1e9;
 }
 
+#ifdef __linux__
+std::string Host::PortalParentWindow() const
+{
+    if (m_window == nullptr)
+        return std::string();
+
+    const SDL_PropertiesID props = SDL_GetWindowProperties(m_window);
+    if (session::IsWayland())
+    {
+        // SDL exports the toplevel through xdg_foreign when the window maps
+        // and drops the export when it unmaps, so an empty answer here means
+        // the window is genuinely not on screen.
+        const char* handle = SDL_GetStringProperty(
+            props, SDL_PROP_WINDOW_WAYLAND_XDG_TOPLEVEL_EXPORT_HANDLE_STRING, nullptr);
+        if (handle == nullptr || *handle == '\0')
+            return std::string();
+        return std::string("wayland:") + handle;
+    }
+
+    const Uint64 xid = SDL_GetNumberProperty(props, SDL_PROP_WINDOW_X11_WINDOW_NUMBER, 0);
+    if (xid == 0)
+        return std::string();
+    char text[32];
+    SDL_snprintf(text, sizeof(text), "x11:%llx", (unsigned long long)xid);
+    return text;
+}
+#endif
+
 void Host::Hide()
 {
     if (m_window)
@@ -130,8 +208,9 @@ void Host::Show()
     SDL_RaiseWindow(m_window);
 }
 
-bool Host::EnterOverlay(const Rect& desktop, std::string& error)
+bool Host::EnterOverlay(const Rect& desktop, Rect& covered, std::string& error)
 {
+    covered = desktop;
     if (m_window == nullptr)
     {
         error = "there is no window to put the overlay on";
@@ -139,6 +218,29 @@ bool Host::EnterOverlay(const Rect& desktop, std::string& error)
     }
     if (m_inOverlay)
         return true;
+
+#ifdef __linux__
+    if (session::IsWayland())
+    {
+        // Wayland gives a client no say over where its window goes and no
+        // "always on top", and a window lives on one output. Fullscreen on
+        // the display we are on is the one shape the compositor guarantees
+        // to cover everything else; the caller crops the desktop capture to
+        // that display.
+        SDL_SetWindowFullscreenMode(m_window, nullptr);   // borderless, at the desktop's own mode
+        SDL_SetWindowFullscreen(m_window, true);
+        SDL_ShowWindow(m_window);
+        SDL_SyncWindow(m_window);
+
+        const Rect display = session::CaptureBoundsOfDisplay(SDL_GetDisplayForWindow(m_window));
+        if (!display.Empty())
+            covered = display;
+
+        m_fullscreenOverlay = true;
+        m_inOverlay = true;
+        return true;
+    }
+#endif
 
     m_savedMaximised = (SDL_GetWindowFlags(m_window) & SDL_WINDOW_MAXIMIZED) != 0;
     if (m_savedMaximised)
@@ -165,6 +267,15 @@ void Host::LeaveOverlay()
 {
     if (!m_inOverlay || m_window == nullptr)
         return;
+
+    if (m_fullscreenOverlay)
+    {
+        SDL_SetWindowFullscreen(m_window, false);
+        SDL_SyncWindow(m_window);
+        m_fullscreenOverlay = false;
+        m_inOverlay = false;
+        return;
+    }
 
     SDL_SetWindowAlwaysOnTop(m_window, false);
     SDL_SetWindowBordered(m_window, true);

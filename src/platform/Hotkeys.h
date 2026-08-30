@@ -39,6 +39,12 @@ namespace daveshot::hotkeys
     // Hotkey presses since the last call, in order. Empty most frames.
     void Drain(std::vector<Action>& out);
 
+    // Registering is not always immediate: on Wayland the desktop asks the
+    // user to approve the keys, and the answer arrives frames later, through
+    // Drain. A failure that arrives that way is collected here, once. Empty
+    // when there is nothing to report.
+    std::string TakeError();
+
     // Installs the hook that notices WM_HOTKEY. Call once, after SDL's video
     // subsystem is up.
     void Install();

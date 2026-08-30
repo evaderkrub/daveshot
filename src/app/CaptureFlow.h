@@ -19,7 +19,17 @@ namespace daveshot
         virtual void HideWindow() = 0;
         virtual void ShowWindow() = 0;
 
-        virtual bool EnterOverlay(const Rect& desktop, std::string& error) = 0;
+        // Whether the desktop still has to ask the user for permission to
+        // capture, and the asking. Separate from the grab because the desktop
+        // only asks while our window is up, so the question has to be put
+        // before the window hides -- see platform/Screen.h.
+        virtual bool NeedsCapturePermission() = 0;
+        virtual bool RequestCapturePermission(std::string& error) = 0;
+
+        // `covered` is the part of the desktop the overlay actually spans.
+        // A window cannot cross monitors everywhere, and when it cannot the
+        // sequence crops the frozen desktop down to what the overlay shows.
+        virtual bool EnterOverlay(const Rect& desktop, Rect& covered, std::string& error) = 0;
         virtual void LeaveOverlay() = 0;
 
         virtual bool Grab(const CaptureRequest& request, Image& out, Rect& source,

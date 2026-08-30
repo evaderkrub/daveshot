@@ -1,0 +1,9 @@
+[Desktop Entry]
+Type=Application
+Name=daveshot
+Comment=Screen capture tool
+Exec=@EXE@
+Icon=@ICON@
+Terminal=false
+Categories=Graphics;Utility;
+StartupWMClass=daveshot

@@ -6,6 +6,7 @@ include(FetchContent)
 set(DAVESHOT_SDL_TAG        "release-3.4.14")
 set(DAVESHOT_IMGUI_TAG      "v1.92.9b-docking")
 set(DAVESHOT_IMGUI_TE_TAG   "v1.92.9b")
+set(DAVESHOT_STB_COMMIT     "2c980bb59875b0d32144a71867fbdebb2f77cd20")
 
 # --- SDL3 ------------------------------------------------------------------
 set(SDL_STATIC       ON  CACHE BOOL "" FORCE)
@@ -32,6 +33,19 @@ FetchContent_Declare(imgui_test_engine
     GIT_TAG        ${DAVESHOT_IMGUI_TE_TAG}
     GIT_SHALLOW    TRUE
     GIT_PROGRESS   TRUE)
+
+# --- stb (Linux only) ----------------------------------------------------
+# PNG and JPEG codecs for the platforms without a system one. Header-only and
+# untagged upstream, so pinned to a commit.
+if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
+    FetchContent_Declare(stb
+        GIT_REPOSITORY https://github.com/nothings/stb.git
+        GIT_TAG        ${DAVESHOT_STB_COMMIT}
+        GIT_PROGRESS   TRUE)
+    FetchContent_MakeAvailable(stb)
+    add_library(daveshot_stb INTERFACE)
+    target_include_directories(daveshot_stb SYSTEM INTERFACE ${stb_SOURCE_DIR})
+endif()
 
 FetchContent_MakeAvailable(SDL3 imgui imgui_test_engine)
 

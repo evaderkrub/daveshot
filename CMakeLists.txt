@@ -28,6 +28,35 @@ include(cmake/Dependencies.cmake)
 include(cmake/Warnings.cmake)
 
 # ---------------------------------------------------------------------------
+# The platform layer. Host.cpp and Paths.cpp are shared; everything that
+# reads the screen, owns a hotkey, writes an image or talks to the clipboard
+# has one file per OS under src/platform/<os>/.
+# ---------------------------------------------------------------------------
+if(WIN32)
+    set(DAVESHOT_PLATFORM_SOURCES
+        src/platform/win32/Clipboard.cpp
+        src/platform/win32/Hotkeys.cpp
+        src/platform/win32/ImageIo.cpp
+        src/platform/win32/Screen.cpp)
+elseif(CMAKE_SYSTEM_NAME STREQUAL "Linux")
+    set(DAVESHOT_PLATFORM_SOURCES
+        src/platform/linux/Clipboard.cpp
+        src/platform/linux/Dbus.cpp
+        src/platform/linux/Hotkeys.cpp
+        src/platform/linux/HotkeysPortal.cpp
+        src/platform/linux/HotkeysX11.cpp
+        src/platform/linux/ImageCodec.cpp
+        src/platform/linux/ImageIo.cpp
+        src/platform/linux/Screen.cpp
+        src/platform/linux/ScreenPortal.cpp
+        src/platform/linux/ScreenX11.cpp
+        src/platform/linux/Session.cpp
+        src/platform/linux/X11.cpp)
+else()
+    message(FATAL_ERROR "daveshot builds for Windows and Linux; ${CMAKE_SYSTEM_NAME} has no platform layer")
+endif()
+
+# ---------------------------------------------------------------------------
 # daveshot_core -- everything except the entry point, so the test binaries can
 # link the same code the application runs.
 # ---------------------------------------------------------------------------
@@ -40,12 +69,9 @@ add_library(daveshot_core STATIC
     src/app/Naming.cpp
     src/app/Settings.cpp
 
-    src/platform/Clipboard.cpp
     src/platform/Host.cpp
-    src/platform/Hotkeys.cpp
-    src/platform/ImageIo.cpp
     src/platform/Paths.cpp
-    src/platform/Screen.cpp
+    ${DAVESHOT_PLATFORM_SOURCES}
 
     src/ui/AboutDialog.cpp
     src/ui/AppLoop.cpp
@@ -69,6 +95,19 @@ if(WIN32)
     target_link_libraries(daveshot_core PUBLIC
         dwmapi windowscodecs shell32 shlwapi)
 endif()
+
+# On Linux the screen is read through X11 where there is an X server, and
+# through the desktop portal over D-Bus on Wayland. Both libraries are on
+# every desktop install, so linking them dynamically costs the portable
+# build nothing. Images are encoded by stb, compiled straight in.
+if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
+    find_package(X11 REQUIRED)
+    find_package(PkgConfig REQUIRED)
+    pkg_check_modules(DBUS REQUIRED IMPORTED_TARGET dbus-1)
+    find_package(Threads REQUIRED)
+    target_link_libraries(daveshot_core PUBLIC
+        daveshot_stb X11::X11 PkgConfig::DBUS Threads::Threads)
+endif()
 daveshot_set_warnings(daveshot_core)
 
 # ---------------------------------------------------------------------------
@@ -87,7 +126,16 @@ if(WIN32)
     # The icon is compiled into the executable rather than loaded from a file,
     # so the staged folder cannot end up with a program that has lost its icon.
     enable_language(RC)
-    target_sources(daveshot PRIVATE src/platform/daveshot.rc)
+    target_sources(daveshot PRIVATE src/platform/win32/daveshot.rc)
+endif()
+
+# The Linux counterpart of the static CRT: the C++ runtime is the one
+# library whose version varies between distributions, so it travels inside
+# the executable rather than being looked for on the other machine.
+if(CMAKE_SYSTEM_NAME STREQUAL "Linux" AND NOT MSVC)
+    foreach(target IN ITEMS daveshot)
+        target_link_options(${target} PRIVATE -static-libstdc++ -static-libgcc)
+    endforeach()
 endif()
 
 # Assets are staged beside the executable on every build, so running from the

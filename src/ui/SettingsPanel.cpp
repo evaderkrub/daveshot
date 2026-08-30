@@ -98,7 +98,7 @@ namespace
         if (StringField("Folder", folder))
             s.saveFolder = folder;
         if (ImGui::IsItemHovered())
-            ImGui::SetTooltip("Where captures are written.\nLeave empty for Pictures\\daveshot.");
+            ImGui::SetTooltip("Where captures are written.\nLeave empty for the daveshot folder in Pictures.");
 
         StringField("Filename", s.filenamePattern, 128);
         if (ImGui::IsItemHovered())

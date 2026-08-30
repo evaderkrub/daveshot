@@ -26,6 +26,21 @@ namespace daveshot::screen
         Rect        bounds;     // the visible frame, not the resize border
     };
 
+    // What this display server lets a screenshot tool do. Windows and X11
+    // let us list windows and put one window across every monitor; Wayland
+    // does neither, and offers the desktop's own picker instead.
+    struct Features
+    {
+        bool windowList           = true;    // EnumerateWindows returns something
+        bool pickOnScreen         = false;   // CaptureWindow(kPickWindowOnScreen) works
+        bool overlaySpansMonitors = true;    // the region overlay can cover them all
+    };
+    Features Capabilities();
+
+    // A window handle meaning "let the desktop's picker choose". Never a
+    // real handle on any platform.
+    inline constexpr uint64_t kPickWindowOnScreen = ~0ull;
+
     // The union of every monitor. Its origin is the top-left of the primary
     // monitor, so x/y are negative for monitors above or left of it.
     Rect VirtualDesktopBounds();
@@ -46,6 +61,15 @@ namespace daveshot::screen
     // covering, by asking it to redraw into an off-screen surface. Falls back
     // to reading that region of the screen for windows that refuse.
     bool CaptureWindow(uint64_t handle, Image& out, std::string& error);
+
+    // Some desktops -- Wayland's, through its portal -- ask the user once
+    // whether this application may photograph their screen, and will only
+    // ask while the application's own window is on screen and in front. A
+    // screenshot tool hides itself before it shoots, so the question has to
+    // be settled first or it can never be answered at all. Both are false
+    // and true respectively where the platform never asks.
+    bool NeedsCapturePermission();
+    bool RequestCapturePermission(std::string& error);
 
     // The window under a screen point, skipping our own -- for click-a-window
     // capture. Returns 0 when there is nothing usable there.

@@ -1,8 +1,8 @@
 # daveshot
 
-A screen capture tool for Windows. C++20, SDL3 for the window and input, Dear
-ImGui (docking branch) for the interface. The build is a folder you can copy to
-another machine and run.
+A screen capture tool for Windows and Linux. C++20, SDL3 for the window and
+input, Dear ImGui (docking branch) for the interface. The build is a folder you
+can copy to another machine and run.
 
 ## What it does
 
@@ -25,15 +25,16 @@ repaint, so it never appears in its own screenshots.
 **Global hotkeys** work while daveshot is behind whatever you want a picture
 of. `Ctrl+Shift+S` takes a region and `PrintScreen` takes the full screen by
 default; both are configurable, and a combination another application already
-owns is reported rather than silently ignored.
+owns is reported rather than silently ignored. (On Wayland the desktop owns the
+keys and asks you to approve them -- see *Linux* below.)
 
 **After a capture** the shot appears in the preview, goes on the clipboard, and
-is written to `Pictures\daveshot` as a timestamped PNG. All three are
+is written to `Pictures/daveshot` as a timestamped PNG. All three are
 configurable — folder, filename pattern, PNG or JPEG with a quality setting,
 and whether the copy and the save happen automatically. `Copy path` puts the
 file's path on the clipboard as text, for when the file is going into a message
-or a command line rather than into a document. `Show in folder` opens Explorer
-with it selected.
+or a command line rather than into a document. `Show in folder` opens the file
+manager with it selected.
 
 **History** keeps this session's captures as a thumbnail strip; clicking one
 brings it back into the preview. The limit is a memory decision as much as a
@@ -54,10 +55,13 @@ top of whatever the display's own DPI scale is.
 
 ## Building
 
+SDL3, Dear ImGui, the ImGui Test Engine and (on Linux) stb are fetched by CMake
+at configure time -- pinned tags and commits, see `cmake/Dependencies.cmake`.
+
+### Windows
+
 Requires CMake 3.24+, Ninja, and Visual Studio 2022 or newer with the C++
-toolset. SDL3, Dear ImGui and the ImGui Test Engine are fetched by CMake at
-configure time (pinned tags — see `cmake/Dependencies.cmake`); nothing else
-needs installing.
+toolset. Nothing else needs installing.
 
 ```powershell
 ./scripts/build.ps1                  # debug: configure, build, run tests
@@ -96,10 +100,83 @@ different working directory, and that is the usual way a portable build stops
 being portable. Settings and the window layout are written beside the
 executable, so the folder carries its own configuration.
 
+### Linux
+
+Requires CMake 3.24+, Ninja, a C++20 compiler (GCC 13+ or Clang 16+), and the
+development packages for X11, D-Bus and Wayland. On Debian and Ubuntu:
+
+```sh
+sudo apt install build-essential cmake ninja-build pkg-config \
+     libx11-dev libxext-dev libdbus-1-dev libwayland-dev wayland-protocols \
+     libxkbcommon-dev libdecor-0-dev libegl-dev libgl-dev
+```
+
+```sh
+./scripts/build.sh                  # debug: configure, build, run tests
+./scripts/build.sh release
+```
+
+or with the presets directly: `cmake --preset linux-release`, `cmake --build
+--preset linux-release`, `ctest --preset linux-release`. Output goes to
+`~/buildfiles/daveshot/linux-<preset>`, and the program is the `stage` folder
+inside it, laid out the same way as on Windows. The C++ runtime is linked in
+statically; SDL3 is static too and loads X11 or Wayland at run time, so the
+executable's only shared dependencies are libc, libX11 and libdbus, which
+every desktop install has.
+
+The same folder runs on X11 and on Wayland, but the two are different
+platforms as far as a screenshot tool is concerned, and daveshot picks its
+path at startup from the session it finds itself in:
+
+- **X11** reads the screen and the window list straight from the X server,
+  and grabs hotkeys on the root window. Everything the Windows build does
+  works the same way, with one exception: a window capture is that rectangle
+  of the screen, so anything covering the window is in the shot (there is no
+  `PrintWindow` without the Composite extension, which is not used).
+- **Wayland** does not let a client read the screen, list other clients'
+  windows, place its own window, or listen for keys it does not have focus
+  for. daveshot goes through the desktop portal for all of it:
+  - Full-screen, monitor and region captures ask
+    `org.freedesktop.portal.Screenshot` for a picture of the whole desktop and
+    crop it. The region overlay then goes fullscreen on the monitor daveshot is
+    on -- a window cannot span monitors here -- and shows that monitor's part
+    of the capture.
+
+    GNOME asks once, on the first capture, whether daveshot may photograph the
+    screen, and it will only ask while daveshot's window is up and named in
+    the request -- which is why the first capture puts the question before it
+    hides rather than after. That one shot is thrown away and the real capture
+    follows; every capture after it goes straight through.
+  - **Window** capture hands over to the desktop's own picker: press *Window*
+    and choose the window (or a region, or a screen) in the desktop's UI.
+    There is no window list because there is nothing to list.
+  - **Global hotkeys** go through `org.freedesktop.portal.GlobalShortcuts`.
+    The combinations in Settings are a suggestion; the desktop shows a dialog
+    to approve or change them, and remembers the answer against the app id
+    (`org.daveshot.daveshot`). GNOME's dialog only works for an application it
+    can look up, so register the staged folder once:
+
+    ```sh
+    ./scripts/install-desktop-entry.sh ~/buildfiles/daveshot/linux-release/stage
+    ```
+
+    which writes `~/.local/share/applications/org.daveshot.daveshot.desktop`
+    pointing at that folder (and puts daveshot in the application grid).
+    Without it, GNOME refuses the binding and daveshot reports that the
+    desktop could not bind the hotkeys; the in-app buttons still work.
+  - The clipboard on Wayland belongs to whichever window has keyboard focus.
+    A copy made while the overlay is coming down can be refused by the
+    compositor; daveshot notices and offers it again as soon as its window
+    has focus, so the shot ends up on the clipboard either way.
+
+PNG and JPEG are written by stb, compiled in; nothing is dynamically linked
+for it.
+
 ## Testing
 
 ```powershell
-ctest --preset debug        # both binaries
+ctest --preset debug        # both binaries (Windows)
+ctest --preset linux-debug  # Linux
 ```
 
 or run them directly out of the stage folder:
@@ -124,15 +201,19 @@ Both print a one-line summary per test and return non-zero on failure.
 
 ```
 CMakeLists.txt
-CMakePresets.json     debug/release, Ninja, output under C:/buildfiles
+CMakePresets.json     debug/release (MSVC), linux-debug/linux-release (GCC/Clang)
 cmake/                dependency fetching, warning flags, version header
 scripts/build.ps1     MSVC environment + configure + build + test
+scripts/build.sh      the same on Linux
+scripts/install-desktop-entry.sh   registers a staged folder with the desktop
 tools/make_icon.py    regenerates assets/icons/daveshot.ico
 src/main.cpp          entry point, nothing else
 src/app/              application state and logic, no ImGui calls
 src/ui/               everything that draws
 src/platform/         anything that touches the OS directly
-assets/               fonts, icons, licences
+src/platform/win32/   GDI, DWM, WIC, RegisterHotKey, the clipboard
+src/platform/linux/   X11 and the desktop portal, stb, SDL's clipboard
+assets/               fonts, icons, licences, the Linux desktop entry
 tests/                console test binaries
 ```
 
@@ -143,14 +224,21 @@ is what lets every panel be tested with no screen attached, and it is why
 `src/app/CaptureFlow.cpp` takes its effects through an interface rather than
 calling the platform layer directly.
 
+`src/platform/Host.cpp` and `src/platform/Paths.cpp` are shared between the
+platforms; everything else that touches the OS has one file per platform under
+`src/platform/win32` and `src/platform/linux`, behind the same headers. On
+Linux, `Screen` and `Hotkeys` each pick between an X11 backend and a portal
+backend at run time (`platform/linux/Session.h`).
+
 `src/ui/AppLoop.cpp` is also the composition root. It sits under `src/ui`
 because it exists to drive the drawing; that is what keeps `main.cpp` a single
 line and `src/app` free of ImGui.
 
 ## Conventions
 
-- `/W4 /permissive- /WX` under MSVC. Third-party headers are included as system
-  headers so their warnings cannot fail our build, and ours are not silenced.
+- `/W4 /permissive- /WX` under MSVC, `-Wall -Wextra -Wpedantic -Werror`
+  elsewhere. Third-party headers are included as system headers so their
+  warnings cannot fail our build, and ours are not silenced.
 - The drawing code reads application state and does not own it. State lives in
   plain structs in `src/app` that the console tests exercise without a window.
 - No exceptions across module boundaries. Failures return `false` plus an error
@@ -159,15 +247,22 @@ line and `src/app` free of ImGui.
 
 ## Notes and limits
 
-- **Windows only.** The capture path is Win32 — GDI for reading the screen, DWM
-  for a window's true visible bounds, WIC for writing PNG and JPEG without
-  linking an encoder, and the shell for known folders. `src/platform/Paths.cpp`
-  has POSIX branches; nothing else does.
+- **Windows and Linux.** On Windows the capture path is Win32 — GDI for
+  reading the screen, DWM for a window's true visible bounds, WIC for writing
+  PNG and JPEG without linking an encoder, and the shell for known folders. On
+  Linux it is X11 or the desktop portal, as described under *Building*. macOS
+  has no platform layer.
 - **PrintScreen may already be taken.** Windows 11 binds it to the Snipping
-  Tool by default, and on a machine where something else holds a combination,
-  Windows gives it to whoever asked first. If a hotkey does nothing, pick
-  another one in Settings — the tested-working combinations here were
-  `Ctrl+Shift+A` and the in-app buttons.
+  Tool by default, GNOME binds it to its own screenshot UI, and on a machine
+  where something else holds a combination, the first to ask keeps it. If a
+  hotkey does nothing, pick another one in Settings — the tested-working
+  combinations here were `Ctrl+Shift+A` and the in-app buttons.
+- **On Wayland, the clipboard empties when daveshot quits.** A Wayland client
+  serves its clipboard for as long as it runs; there is nowhere to leave the
+  data behind. A clipboard manager keeps a copy; otherwise, save the file.
+- **On Wayland, windows cannot be captured from a list**, and a window capture
+  on X11 includes whatever is covering it. Both are the display server's
+  rules, not a queue of work.
 - **No annotation.** Arrows, boxes, text and blur are not implemented; a
   capture goes to the clipboard and to disk as it was taken.
 - **History lives in memory only.** It is a session's worth of captures, not a
