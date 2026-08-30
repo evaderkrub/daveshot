@@ -5,6 +5,8 @@
 // one entry supplies the Explorer icon, the title-bar icon, the taskbar icon
 // and alt-tab, with no code and no icon file travelling beside the exe.
 //
-// The path is relative to this file, which is where the resource compiler
-// resolves it from.
-1 ICON "../../assets/icons/daveshot.ico"
+// The path is relative to the project root, which CMake puts on the resource
+// compiler's include path: rc.exe resolves a file like this one against its
+// working directory and its /I list, and neither of those is the folder this
+// file sits in.
+1 ICON "assets/icons/daveshot.ico"

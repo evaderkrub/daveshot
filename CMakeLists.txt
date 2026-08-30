@@ -127,6 +127,8 @@ if(WIN32)
     # so the staged folder cannot end up with a program that has lost its icon.
     enable_language(RC)
     target_sources(daveshot PRIVATE src/platform/win32/daveshot.rc)
+    set_property(SOURCE src/platform/win32/daveshot.rc APPEND
+                 PROPERTY COMPILE_OPTIONS "/I${CMAKE_CURRENT_SOURCE_DIR}")
 endif()
 
 # The Linux counterpart of the static CRT: the C++ runtime is the one
