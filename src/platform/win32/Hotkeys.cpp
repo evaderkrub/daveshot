@@ -153,6 +153,16 @@ bool IsParseable(const std::string& name)
     return Parse(name, combo);
 }
 
+bool IsBarePrintScreen(const std::string& name)
+{
+    Combo combo;
+    if (!Parse(name, combo) || combo.none)
+        return false;
+    // Parse adds MOD_NOREPEAT to every combination; anything beyond it is a
+    // modifier the user asked for.
+    return combo.key == VK_SNAPSHOT && combo.modifiers == MOD_NOREPEAT;
+}
+
 void Install()
 {
     if (gHookInstalled)

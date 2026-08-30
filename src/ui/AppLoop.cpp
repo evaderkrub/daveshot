@@ -6,6 +6,7 @@
 #include "platform/Clipboard.h"
 #include "platform/Host.h"
 #include "platform/Hotkeys.h"
+#include "platform/PrintScreenKey.h"
 #include "platform/Paths.h"
 #include "platform/Screen.h"
 #include "ui/Fonts.h"
@@ -122,6 +123,25 @@ namespace
         }
     }
 
+    // Only a bare Print collides with the desktop's own screenshot tool, so
+    // only a bare Print is worth asking the OS about -- the query reads the
+    // registry on Windows and runs gsettings on Linux.
+    bool WantsPrintScreen(const AppState& state)
+    {
+        return state.settings.hotkeyEnabled &&
+               (hotkeys::IsBarePrintScreen(state.settings.hotkeyRegion) ||
+                hotkeys::IsBarePrintScreen(state.settings.hotkeyScreen));
+    }
+
+    void RefreshPrintKey(AppState& state)
+    {
+        if (!state.printKeyStale)
+            return;
+        state.printKeyStale = false;
+        state.printKey = WantsPrintScreen(state) ? printkey::Query()
+                                                 : printkey::Status{};
+    }
+
     void HandleHotkeys(AppState& state)
     {
         std::vector<hotkeys::Action> fired;
@@ -212,6 +232,28 @@ namespace
             }
         }
 
+        if (state.takePrintKeyRequested || state.givePrintKeyRequested)
+        {
+            const bool take = state.takePrintKeyRequested;
+            state.takePrintKeyRequested = false;
+            state.givePrintKeyRequested = false;
+
+            std::string keyError;
+            if (take ? printkey::Take(keyError) : printkey::GiveBack(keyError))
+            {
+                state.status = take ? "Print Screen is daveshot's"
+                                    : "Print Screen handed back to the desktop";
+                // A hotkey the desktop refused while it held the key has to
+                // be asked for again now that it does not.
+                RefreshHotkeys(state);
+            }
+            else
+            {
+                ReportError(state, keyError);
+            }
+            state.printKeyStale = true;
+        }
+
         if (state.revealRequested)
         {
             state.revealRequested = false;
@@ -273,6 +315,7 @@ int RunApplication(int argc, char** argv)
 
         ApplyHotkeys(state);
         HandleHotkeys(state);
+        RefreshPrintKey(state);
         ApplyIntents(state, effects, now);
         TickCapture(state, effects, now);
 

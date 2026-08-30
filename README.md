@@ -29,6 +29,15 @@ default on Linux; on Windows it is `Ctrl+Shift+S` for a region and
 owns is reported rather than silently ignored. (On Wayland the desktop owns the
 keys and asks you to approve them -- see *Linux* below.)
 
+**Print Screen belongs to the desktop until you say otherwise.** Windows 11
+opens the Snipping Tool on it and GNOME opens its own screenshot UI, and
+neither steps aside for a hotkey. When Print Screen is one of daveshot's
+hotkeys, Settings says who currently has it and offers one button --
+*Take over Print Screen* -- which turns the desktop's own shortcut off and
+asks for the hotkey again. *Give Print Screen back* undoes it. Nothing is
+changed until the button is pressed: it is a setting on your machine, not
+in daveshot's file.
+
 **After a capture** the shot appears in the preview, goes on the clipboard, and
 is written to `Pictures/daveshot` as a timestamped PNG. All three are
 configurable — folder, filename pattern, PNG or JPEG with a quality setting,
@@ -215,8 +224,8 @@ src/main.cpp          entry point, nothing else
 src/app/              application state and logic, no ImGui calls
 src/ui/               everything that draws
 src/platform/         anything that touches the OS directly
-src/platform/win32/   GDI, DWM, WIC, RegisterHotKey, the clipboard
-src/platform/linux/   X11 and the desktop portal, stb, SDL's clipboard
+src/platform/win32/   GDI, DWM, WIC, RegisterHotKey, the registry, the clipboard
+src/platform/linux/   X11, the desktop portal, gsettings, stb, SDL's clipboard
 assets/               fonts, icons, licences, the Linux desktop entry
 tests/                console test binaries
 ```
@@ -259,18 +268,28 @@ line and `src/app` free of ImGui.
 - **PrintScreen may already be taken.** Windows 11 binds it to the Snipping
   Tool by default, and GNOME binds it to its own screenshot UI, which is the
   one thing standing between daveshot's Linux default and the key it asks
-  for. Free it once and the portal will hand it over:
+  for. The two are refused differently -- Windows hands the hotkey over and
+  then opens the Snipping Tool as well, GNOME will not hand it over at all --
+  and both are settled by the *Take over Print Screen* button in Settings,
+  which turns off exactly what the desktop's own switch would:
 
     ```sh
+    # Linux, GNOME
     gsettings set org.gnome.shell.keybindings show-screenshot-ui "[]"
     ```
 
-  `Shift+Print` and `Alt+Print` stay GNOME's, and `gsettings reset` puts it
-  back. Otherwise pick another combination in Settings -- but note that the
-  hotkeys are approved as one set, so a key the shell holds fails the other
-  one with it, and on a machine where something else holds a combination the
-  first to ask keeps it. If a hotkey does nothing, the in-app buttons always
-  work.
+    ```
+    Windows: Settings > Accessibility > Keyboard >
+             "Use the Print screen key to open screen capture"
+    ```
+
+  `Shift+Print` and `Alt+Print` stay GNOME's either way. On Windows the change
+  usually takes effect at once; sign out and back in if the Snipping Tool
+  still appears. Otherwise pick another combination in Settings -- but note
+  that on Linux the hotkeys are approved as one set, so a key the shell holds
+  fails the other one with it, and on a machine where something else holds a
+  combination the first to ask keeps it. If a hotkey does nothing, the in-app
+  buttons always work.
 - **On Wayland, the clipboard empties when daveshot quits.** A Wayland client
   serves its clipboard for as long as it runs; there is nowhere to leave the
   data behind. A clipboard manager keeps a copy; otherwise, save the file.

@@ -403,6 +403,47 @@ namespace
             MarkHotkeysApplied(gState);
         };
 
+        t = IM_REGISTER_TEST(engine, "ui", "print_screen_can_be_taken_over");
+        t->TestFunc = [](ImGuiTestContext* ctx)
+        {
+            // The loop asks the OS and leaves the answer here; the panel only
+            // reads it. That is what lets both halves of the offer be tested
+            // on a machine where the desktop holds nothing.
+            gState.printKey.state = printkey::State::Desktop;
+            gState.printKey.hint  = "The desktop answers Print Screen itself.";
+            gState.takePrintKeyRequested = false;
+            gState.givePrintKeyRequested = false;
+            gState.showSettings = true;
+            ctx->Yield(3);
+
+            ctx->SetRef(ui::kWindowSettings);
+            IM_CHECK(!ctx->ItemExists("Give Print Screen back"));
+            ctx->ItemClick("Take over Print Screen");
+            ctx->Yield(2);
+            IM_CHECK(gState.takePrintKeyRequested);
+
+            gState.printKey.state = printkey::State::Ours;
+            gState.printKey.hint  = "Print Screen is daveshot's.";
+            // The engine reports an item as present for two frames after it
+            // stops being drawn, so a "no longer there" check has to outlast
+            // that; anything less passes on a stale answer.
+            ctx->Yield(4);
+            IM_CHECK(!ctx->ItemExists("Take over Print Screen"));
+            ctx->ItemClick("Give Print Screen back");
+            ctx->Yield(2);
+            IM_CHECK(gState.givePrintKeyRequested);
+
+            // Unknown is the answer on a desktop whose binding we cannot
+            // read, and on a machine where Print Screen is not a hotkey at
+            // all: neither offer belongs there.
+            gState.printKey = printkey::Status{};
+            gState.takePrintKeyRequested = false;
+            gState.givePrintKeyRequested = false;
+            ctx->Yield(4);
+            IM_CHECK(!ctx->ItemExists("Take over Print Screen"));
+            IM_CHECK(!ctx->ItemExists("Give Print Screen back"));
+        };
+
         t = IM_REGISTER_TEST(engine, "ui", "format_switch_reveals_quality");
         t->TestFunc = [](ImGuiTestContext* ctx)
         {

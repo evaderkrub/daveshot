@@ -33,6 +33,15 @@ void SetHotkeys(AppState& state, const std::string& region, const std::string& s
     if (!screen.empty()) state.settings.hotkeyScreen = screen;
     state.settings.hotkeyEnabled = enabled;
     ++state.hotkeyRevision;
+
+    // Whether Print Screen is one of them decides whether the desktop's own
+    // binding matters, so the cached answer no longer applies.
+    state.printKeyStale = true;
+}
+
+void RefreshHotkeys(AppState& state)
+{
+    ++state.hotkeyRevision;
 }
 
 bool StyleNeedsRebuild(const AppState& state)

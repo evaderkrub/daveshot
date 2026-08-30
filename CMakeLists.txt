@@ -37,6 +37,7 @@ if(WIN32)
         src/platform/win32/Clipboard.cpp
         src/platform/win32/Hotkeys.cpp
         src/platform/win32/ImageIo.cpp
+        src/platform/win32/PrintScreenKey.cpp
         src/platform/win32/Screen.cpp)
 elseif(CMAKE_SYSTEM_NAME STREQUAL "Linux")
     set(DAVESHOT_PLATFORM_SOURCES
@@ -47,6 +48,7 @@ elseif(CMAKE_SYSTEM_NAME STREQUAL "Linux")
         src/platform/linux/HotkeysX11.cpp
         src/platform/linux/ImageCodec.cpp
         src/platform/linux/ImageIo.cpp
+        src/platform/linux/PrintScreenKey.cpp
         src/platform/linux/Screen.cpp
         src/platform/linux/ScreenPortal.cpp
         src/platform/linux/ScreenX11.cpp
@@ -93,7 +95,7 @@ target_link_libraries(daveshot_core PUBLIC daveshot_imgui SDL3::SDL3-static)
 # encoder, and the shell for known folders and "show in folder".
 if(WIN32)
     target_link_libraries(daveshot_core PUBLIC
-        dwmapi windowscodecs shell32 shlwapi)
+        dwmapi windowscodecs shell32 shlwapi advapi32)
 endif()
 
 # On Linux the screen is read through X11 where there is an X server, and

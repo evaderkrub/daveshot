@@ -10,6 +10,7 @@
 #include "app/Image.h"
 #include "app/Naming.h"
 #include "app/Settings.h"
+#include "platform/Hotkeys.h"
 #include "platform/Paths.h"
 
 #include <cmath>
@@ -729,6 +730,52 @@ void TestHotkeyRevisions()
     CHECK(!state.settings.hotkeyEnabled);
 }
 
+// Which combination the desktop's own screenshot tool also answers. Only a
+// bare Print does; getting this wrong would offer to change a system setting
+// for a hotkey that never collided with one.
+void TestBarePrintScreen()
+{
+    CHECK(hotkeys::IsBarePrintScreen("PrintScreen"));
+    CHECK(hotkeys::IsBarePrintScreen("printscreen"));
+    CHECK(hotkeys::IsBarePrintScreen(" Print "));
+    CHECK(hotkeys::IsBarePrintScreen("PrtSc"));
+
+    CHECK(!hotkeys::IsBarePrintScreen("Alt+PrintScreen"));
+    CHECK(!hotkeys::IsBarePrintScreen("Ctrl+PrintScreen"));
+    CHECK(!hotkeys::IsBarePrintScreen("Ctrl+Shift+S"));
+    CHECK(!hotkeys::IsBarePrintScreen("None"));
+    CHECK(!hotkeys::IsBarePrintScreen(""));
+    CHECK(!hotkeys::IsBarePrintScreen("nonsense"));
+}
+
+// The cached answer to "who has Print Screen" is only valid for the hotkeys
+// it was read for, so changing them has to invalidate it.
+void TestPrintKeyGoesStaleWithTheHotkeys()
+{
+    AppState state;
+    state.printKeyStale = false;
+
+    SetHotkeys(state, "PrintScreen", state.settings.hotkeyScreen, true);
+    CHECK(state.printKeyStale);
+
+    state.printKeyStale = false;
+    SetHotkeys(state, "PrintScreen", state.settings.hotkeyScreen, true);
+    CHECK(!state.printKeyStale);   // nothing changed, nothing to re-read
+}
+
+// Freeing the key from the desktop does not change which combination we
+// want -- it changes whether we can have it, so the loop has to ask again.
+void TestRefreshHotkeysAsksAgainWithoutChangingAnything()
+{
+    AppState state;
+    MarkHotkeysApplied(state);
+    const std::string region = state.settings.hotkeyRegion;
+
+    RefreshHotkeys(state);
+    CHECK(HotkeysNeedRegistering(state));
+    CHECK(state.settings.hotkeyRegion == region);
+}
+
 void TestPaths()
 {
     // Every runtime path hangs off the executable's directory, never the
@@ -785,6 +832,9 @@ int main(int argc, char** argv)
 
     TestRevisions();
     TestHotkeyRevisions();
+    TestBarePrintScreen();
+    TestPrintKeyGoesStaleWithTheHotkeys();
+    TestRefreshHotkeysAsksAgainWithoutChangingAnything();
     TestPaths();
 
     return daveshot::testing::Summary("app");

@@ -46,16 +46,16 @@ namespace daveshot
         // both platforms -- for the full screen on Windows, and for a region
         // on Linux, which is the capture worth spending the good key on.
         //
-        // It comes with a condition on Linux: GNOME holds Print for its own
-        // screenshot UI, and the portal will not hand over a key the shell
-        // has. Until it is freed the desktop's dialog is where the user picks
-        // something else --
+        // It comes with a condition: the desktop's own screenshot tool has
+        // the key first -- the Snipping Tool on Windows, GNOME's screenshot
+        // UI on Linux -- and taking it back is a change to the machine's
+        // settings rather than to these, so it is the button the settings
+        // panel offers rather than something applied on startup. See
+        // platform/PrintScreenKey.h.
         //
-        //     gsettings set org.gnome.shell.keybindings show-screenshot-ui "[]"
-        //
-        // -- and because the shortcuts are approved as one set (see
-        // HotkeysPortal.cpp), a Print that is refused takes the other hotkey
-        // with it rather than failing on its own.
+        // On Linux it also has a knock-on: the shortcuts are approved as one
+        // set (see HotkeysPortal.cpp), so a Print the shell still holds takes
+        // the other hotkey down with it rather than failing on its own.
         bool        hotkeyEnabled = true;
 #ifdef __linux__
         std::string hotkeyRegion  = "PrintScreen";

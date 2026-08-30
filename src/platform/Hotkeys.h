@@ -24,6 +24,11 @@ namespace daveshot::hotkeys
     // ignored. "None" parses successfully and registers nothing.
     bool IsParseable(const std::string& name);
 
+    // Whether a combination is Print Screen with nothing held down -- the
+    // one the desktop's own screenshot tool answers as well, and so the only
+    // one worth offering to take over. "Alt+PrintScreen" is not it.
+    bool IsBarePrintScreen(const std::string& name);
+
     // Claims the combinations from the OS. Registering replaces whatever was
     // registered before, so this is also how a changed setting is applied.
     //

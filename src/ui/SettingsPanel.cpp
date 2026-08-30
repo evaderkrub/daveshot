@@ -3,6 +3,7 @@
 #include "app/AppState.h"
 #include "app/CaptureService.h"
 #include "platform/Hotkeys.h"
+#include "platform/PrintScreenKey.h"
 #include "ui/Fonts.h"
 #include "ui/IconsMaterialDesign.h"
 #include "ui/Theme.h"
@@ -55,6 +56,40 @@ namespace
                 ImGui::SetItemDefaultFocus();
         }
         ImGui::EndCombo();
+    }
+
+    // Who answers Print Screen, and the one button that settles it. The
+    // loop fills state.printKey in -- and leaves it Unknown unless Print
+    // Screen is one of the hotkeys -- so this draws nothing on a machine
+    // where the question does not arise.
+    void DrawPrintScreenNote(AppState& state)
+    {
+        if (state.printKey.state == printkey::State::Unknown)
+            return;
+
+        const bool             held    = state.printKey.state == printkey::State::Desktop;
+        const theme::Palette&  palette = theme::Current();
+
+        ImGui::PushStyleColor(ImGuiCol_Text, held ? palette.warning : palette.textMuted);
+        ImGui::TextWrapped("%s %s", held ? ICON_MD_WARNING : ICON_MD_INFO_OUTLINE,
+                           state.printKey.hint.c_str());
+        ImGui::PopStyleColor();
+
+        if (held)
+        {
+            if (ImGui::Button("Take over Print Screen"))
+                state.takePrintKeyRequested = true;
+            if (ImGui::IsItemHovered())
+                ImGui::SetTooltip("Turns the desktop's own screenshot shortcut off,\n"
+                                  "so Print Screen reaches daveshot instead");
+        }
+        else
+        {
+            if (ImGui::Button("Give Print Screen back"))
+                state.givePrintKeyRequested = true;
+            if (ImGui::IsItemHovered())
+                ImGui::SetTooltip("Restores the desktop's own screenshot shortcut");
+        }
     }
 
     void DrawAppearance(AppState& state)
@@ -150,6 +185,8 @@ namespace
 
         if (changed)
             SetHotkeys(state, region, screen, enabled);
+
+        DrawPrintScreenNote(state);
 
         int limit = s.historyLimit;
         if (ImGui::SliderInt("History", &limit, Settings::kMinHistory, Settings::kMaxHistory))

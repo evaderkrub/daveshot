@@ -130,6 +130,15 @@ bool IsParseable(const std::string& name)
     return ParseCombo(name, combo);
 }
 
+bool IsBarePrintScreen(const std::string& name)
+{
+    KeyCombo combo;
+    if (!ParseCombo(name, combo) || combo.none)
+        return false;
+    return combo.key == "print" && !combo.ctrl && !combo.shift &&
+           !combo.alt && !combo.super;
+}
+
 void Install()
 {
     // Both backends open their connection on first use; there is no hook

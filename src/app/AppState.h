@@ -2,6 +2,7 @@
 
 #include "app/Capture.h"
 #include "app/Settings.h"
+#include "platform/PrintScreenKey.h"
 #include "platform/Screen.h"
 
 #include <string>
@@ -57,6 +58,14 @@ namespace daveshot
         std::vector<screen::WindowInfo>  windows;
         bool windowListStale = true;
 
+        // --- The Print Screen key -------------------------------------------
+        // What the desktop's own screenshot tool is doing with Print, so the
+        // settings panel can offer to take the key over. The panel never asks
+        // the OS itself: reading it runs a registry query or a subprocess, so
+        // the loop does it when this goes stale and the panel reads the answer.
+        printkey::Status printKey;
+        bool             printKeyStale = true;
+
         // --- Window visibility ---------------------------------------------
         bool showAbout    = false;   // always opened as a modal, see AboutDialog
         bool showSettings = true;
@@ -80,6 +89,12 @@ namespace daveshot
         bool copyRequested    = false;
         bool copyPathRequested = false;
         bool revealRequested  = false;
+
+        // Taking Print Screen from the desktop, and handing it back. Raised
+        // by the settings panel, acted on by the loop -- it changes a system
+        // setting and then has to re-register the hotkeys behind it.
+        bool takePrintKeyRequested = false;
+        bool givePrintKeyRequested = false;
 
         // --- Transient -----------------------------------------------------
         bool        quitRequested = false;
@@ -110,6 +125,10 @@ namespace daveshot
     void SetTheme(AppState& state, const std::string& themeName);
     void SetHotkeys(AppState& state, const std::string& region, const std::string& screen,
                     bool enabled);
+
+    // Asks the loop to register the hotkeys again without changing them --
+    // what a combination the OS has just released needs.
+    void RefreshHotkeys(AppState& state);
 
     bool StyleNeedsRebuild(const AppState& state);
     void MarkStyleApplied(AppState& state);
