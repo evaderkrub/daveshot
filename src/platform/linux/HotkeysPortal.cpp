@@ -8,16 +8,17 @@
 // like ("CTRL+SHIFT+s"), the user confirms or changes it in the desktop's
 // own dialog, and from then on the desktop sends an Activated signal.
 //
-// Binding is a conversation, not a call: GNOME puts up two dialogs before
-// it answers, and the answer can take as long as the user takes. So this
-// runs as a small state machine advanced from Drain(), and the frame loop
-// keeps drawing in the meantime.
+// Binding is a conversation, not a call: the answer can take as long as the
+// user takes. So this runs as a small state machine advanced from Drain(),
+// and the frame loop keeps drawing in the meantime.
 //
-// Each hotkey gets a session of its own. A session's shortcuts are bound as
-// one set, and the desktop refuses the whole set if the shell already holds
-// any key in it -- so with one session, PrintScreen being GNOME's would take
-// the region hotkey down with it. Sessions are bound one after another, so
-// the user sees one dialog at a time.
+// Every shortcut goes into one session and one BindShortcuts. That is not a
+// tidiness preference: GNOME remembers a single set of shortcuts per
+// application and each BindShortcuts replaces it, so a session per hotkey
+// has each one evicting the other's binding. The store then never matches
+// what is asked for, and the user is made to approve both keys again on
+// every single launch. Asked for as one set, the set is remembered, and the
+// desktop binds it silently from then on.
 
 namespace daveshot::portalhotkeys
 {
@@ -27,29 +28,30 @@ namespace
 
     enum class Stage
     {
-        Waiting,           // its turn has not come
+        Idle,              // nothing registered
         CreatingSession,   // CreateSession sent, waiting for its Response
-        Binding,           // BindShortcuts sent, the desktop is asking the user
+        Binding,           // BindShortcuts sent, the desktop may be asking the user
         Bound,             // Activated signals are live
         Failed,
     };
 
-    struct Session
-    {
-        hotkeys::Binding binding;
-        Stage            stage = Stage::Waiting;
-        std::string      handle;        // object path; empty until created
-        std::string      requestPath;   // the Request being waited on
-    };
-
-    std::vector<Session>         gSessions;
-    bool                         gMatchAdded = false;
-    std::vector<hotkeys::Action> gPending;
-    std::string                  gError;
+    std::vector<hotkeys::Binding> gBindings;
+    Stage                         gStage = Stage::Idle;
+    std::string                   gHandle;        // session object path
+    std::string                   gRequestPath;   // the Request being waited on
+    bool                          gMatchAdded = false;
+    std::vector<hotkeys::Action>  gPending;
+    std::string                   gError;
 
     const char* IdOf(hotkeys::Action action)
     {
         return (action == hotkeys::Action_Region) ? "region" : "screen";
+    }
+
+    const char* DescriptionOf(hotkeys::Action action)
+    {
+        return (action == hotkeys::Action_Region) ? "Capture a region of the screen"
+                                                  : "Capture the whole screen";
     }
 
     // The shortcut spec's spelling: upper-case modifier names, then an xkb
@@ -71,18 +73,24 @@ namespace
         return trigger + key;
     }
 
-    void AppendFailure(const std::string& what)
+    // What the whole set was asked to be, for a message about the whole set.
+    std::string Describe()
     {
-        if (!gError.empty()) gError += "; ";
-        gError += what;
+        std::string text;
+        for (const hotkeys::Binding& binding : gBindings)
+        {
+            if (!text.empty()) text += ", ";
+            text += std::string(binding.what) + " (" + TriggerOf(binding.combo) + ")";
+        }
+        return text;
     }
 
-    void Close(dbus::Connection& bus, Session& session)
+    void Close(dbus::Connection& bus)
     {
-        if (!session.handle.empty())
+        if (!gHandle.empty())
         {
             DBusMessage* message = dbus_message_new_method_call(
-                dbus::kPortalService, session.handle.c_str(),
+                dbus::kPortalService, gHandle.c_str(),
                 "org.freedesktop.portal.Session", "Close");
             if (message != nullptr)
             {
@@ -91,19 +99,12 @@ namespace
                     dbus_message_unref(reply);
                 dbus_message_unref(message);
             }
-            session.handle.clear();
+            gHandle.clear();
         }
-        session.requestPath.clear();
+        gRequestPath.clear();
     }
 
-    void CloseAll(dbus::Connection& bus)
-    {
-        for (Session& session : gSessions)
-            Close(bus, session);
-        gSessions.clear();
-    }
-
-    bool StartCreate(dbus::Connection& bus, Session& session, std::string& error)
+    bool StartCreate(dbus::Connection& bus, std::string& error)
     {
         const bool started = dbus::StartPortalRequest(
             bus, kInterface, "CreateSession",
@@ -114,134 +115,123 @@ namespace
                     dbus::Option::Str("session_handle_token", dbus::NewToken("daveshot_session")),
                 });
             },
-            session.requestPath, error);
-        session.stage = started ? Stage::CreatingSession : Stage::Failed;
+            gRequestPath, error);
+        gStage = started ? Stage::CreatingSession : Stage::Failed;
         return started;
     }
 
-    bool StartBind(dbus::Connection& bus, Session& session, std::string& error)
+    bool StartBind(dbus::Connection& bus, std::string& error)
     {
         const bool started = dbus::StartPortalRequest(
             bus, kInterface, "BindShortcuts",
             [&](DBusMessageIter& args, const std::string& token)
             {
-                const char* handle = session.handle.c_str();
+                const char* handle = gHandle.c_str();
                 dbus_message_iter_append_basic(&args, DBUS_TYPE_OBJECT_PATH, &handle);
 
                 DBusMessageIter list;
                 dbus_message_iter_open_container(&args, DBUS_TYPE_ARRAY, "(sa{sv})", &list);
-                DBusMessageIter entry;
-                dbus_message_iter_open_container(&list, DBUS_TYPE_STRUCT, nullptr, &entry);
-                const char* id = IdOf(session.binding.action);
-                dbus_message_iter_append_basic(&entry, DBUS_TYPE_STRING, &id);
-                dbus::AppendOptions(entry, {
-                    dbus::Option::Str("description",
-                                      session.binding.action == hotkeys::Action_Region
-                                          ? "Capture a region of the screen"
-                                          : "Capture the whole screen"),
-                    dbus::Option::Str("preferred_trigger", TriggerOf(session.binding.combo)),
-                });
-                dbus_message_iter_close_container(&list, &entry);
+                for (const hotkeys::Binding& binding : gBindings)
+                {
+                    DBusMessageIter entry;
+                    dbus_message_iter_open_container(&list, DBUS_TYPE_STRUCT, nullptr, &entry);
+                    const char* id = IdOf(binding.action);
+                    dbus_message_iter_append_basic(&entry, DBUS_TYPE_STRING, &id);
+                    dbus::AppendOptions(entry, {
+                        dbus::Option::Str("description", DescriptionOf(binding.action)),
+                        dbus::Option::Str("preferred_trigger", TriggerOf(binding.combo)),
+                    });
+                    dbus_message_iter_close_container(&list, &entry);
+                }
                 dbus_message_iter_close_container(&args, &list);
 
                 // Naming our window is what lets the desktop put its
                 // shortcut dialog on screen at all -- see Session.h.
-                // Qualified from the root: `session` is also the local
-                // binding being registered, two lines down.
-                const std::string window = daveshot::session::ParentWindow();
+                const std::string window = session::ParentWindow();
                 const char* parent = window.c_str();
                 dbus_message_iter_append_basic(&args, DBUS_TYPE_STRING, &parent);
                 dbus::AppendOptions(args, { dbus::Option::Str("handle_token", token) });
             },
-            session.requestPath, error);
-        session.stage = started ? Stage::Binding : Stage::Failed;
+            gRequestPath, error);
+        gStage = started ? Stage::Binding : Stage::Failed;
         return started;
     }
 
-    // Kicks off the next session that has not had its turn. One at a time:
-    // the desktop's dialogs would otherwise stack up.
-    void Advance(dbus::Connection& bus)
+    void OnResponse(dbus::Connection& bus, const dbus::PortalReply& reply)
     {
-        for (const Session& session : gSessions)
-            if (session.stage == Stage::CreatingSession || session.stage == Stage::Binding)
-                return;   // one is in flight
-
-        for (Session& session : gSessions)
-        {
-            if (session.stage != Stage::Waiting)
-                continue;
-            std::string error;
-            if (!StartCreate(bus, session, error))
-                AppendFailure(std::string(session.binding.what) + ": " + error);
-            else
-                return;
-        }
-    }
-
-    void OnResponse(dbus::Connection& bus, Session& session, const dbus::PortalReply& reply)
-    {
-        if (session.stage == Stage::CreatingSession)
+        if (gStage == Stage::CreatingSession)
         {
             const auto handle = reply.results.find("session_handle");
             if (reply.response != 0 || handle == reply.results.end())
             {
-                AppendFailure(std::string(session.binding.what) +
-                              ": the desktop refused a shortcut session");
-                session.stage = Stage::Failed;
-                Close(bus, session);
+                gError = "the desktop refused a shortcut session";
+                gStage = Stage::Failed;
+                Close(bus);
                 return;
             }
-            session.handle = handle->second;
+            gHandle = handle->second;
             std::string error;
-            if (!StartBind(bus, session, error))
+            if (!StartBind(bus, error))
             {
-                AppendFailure(std::string(session.binding.what) + ": " + error);
-                Close(bus, session);
+                gError = error;
+                Close(bus);
             }
             return;
         }
 
-        if (session.stage == Stage::Binding)
+        if (gStage == Stage::Binding)
         {
-            session.requestPath.clear();
+            gRequestPath.clear();
             // A reply that lists the bound shortcuts is a binding that stands,
             // whatever the code says: xdg-desktop-portal-gnome 48.0 grabs the
-            // key, announces it, and then answers 2. Taking that at face
-            // value would close the one session that works.
+            // keys, names them back with the trigger it gave them, and then
+            // answers 2. Taking that at face value would throw away a session
+            // that works perfectly well.
             if (reply.response == 0 || reply.Has("shortcuts"))
             {
-                session.stage = Stage::Bound;
+                gStage = Stage::Bound;
                 return;
             }
-            const std::string why = (reply.response == 1)
-                ? "the desktop's shortcut dialog was dismissed"
-                : "the desktop would not bind it (another key is usually the fix)";
-            AppendFailure(std::string(session.binding.what) + " (" +
-                          TriggerOf(session.binding.combo) + "): " + why);
-            session.stage = Stage::Failed;
-            Close(bus, session);
+            gError = (reply.response == 1)
+                ? "the desktop's shortcut dialog was dismissed: " + Describe()
+                : "the desktop would not bind " + Describe() +
+                  " (another key is usually the fix)";
+            gStage = Stage::Failed;
+            Close(bus);
         }
     }
 
+    // Activated(o session_handle, s shortcut_id, t timestamp, a{sv} options).
+    // With every shortcut in the one session, the id is what says which key
+    // was pressed.
     void OnActivated(DBusMessage* signal)
     {
+        if (gStage != Stage::Bound)
+            return;
+
         DBusMessageIter iter;
         if (!dbus_message_iter_init(signal, &iter) ||
             dbus_message_iter_get_arg_type(&iter) != DBUS_TYPE_OBJECT_PATH)
             return;
         const char* handle = nullptr;
         dbus_message_iter_get_basic(&iter, &handle);
-        if (handle == nullptr)
+        if (handle == nullptr || gHandle != handle)
             return;
 
-        for (const Session& session : gSessions)
-        {
-            if (session.stage == Stage::Bound && session.handle == handle)
+        if (!dbus_message_iter_next(&iter) ||
+            dbus_message_iter_get_arg_type(&iter) != DBUS_TYPE_STRING)
+            return;
+        const char* id = nullptr;
+        dbus_message_iter_get_basic(&iter, &id);
+        if (id == nullptr)
+            return;
+
+        for (const hotkeys::Binding& binding : gBindings)
+            if (std::string(IdOf(binding.action)) == id)
             {
-                gPending.push_back(session.binding.action);
+                gPending.push_back(binding.action);
                 return;
             }
-        }
     }
 }
 
@@ -254,16 +244,12 @@ bool Register(const std::vector<hotkeys::Binding>& bindings, std::string& error)
         return false;
     }
 
-    // A session's bindings are set once; changing them means new sessions.
-    CloseAll(bus);
+    // A session's shortcuts are set once; changing them means a new session.
+    Close(bus);
     gError.clear();
-    for (const hotkeys::Binding& binding : bindings)
-    {
-        Session session;
-        session.binding = binding;
-        gSessions.push_back(session);
-    }
-    if (gSessions.empty())
+    gBindings = bindings;
+    gStage    = Stage::Idle;
+    if (gBindings.empty())
         return true;
 
     if (!gMatchAdded)
@@ -272,23 +258,27 @@ bool Register(const std::vector<hotkeys::Binding>& bindings, std::string& error)
                      "',member='Activated'");
         gMatchAdded = true;
     }
-    Advance(bus);
+
+    std::string why;
+    if (!StartCreate(bus, why))
+        gError = why;
     return true;
 }
 
 void UnregisterAll()
 {
-    CloseAll(dbus::Connection::Session());
+    Close(dbus::Connection::Session());
+    gBindings.clear();
+    gStage = Stage::Idle;
 }
 
 void Drain(std::vector<hotkeys::Action>& out)
 {
     out.clear();
     dbus::Connection& bus = dbus::Connection::Session();
-    if (!bus.IsOpen() || gSessions.empty())
+    if (!bus.IsOpen() || gBindings.empty())
         return;
 
-    bool advanced = false;
     bus.Pump(0, [&](DBusMessage* signal)
     {
         if (dbus_message_is_signal(signal, kInterface, "Activated"))
@@ -296,21 +286,11 @@ void Drain(std::vector<hotkeys::Action>& out)
             OnActivated(signal);
             return false;
         }
-        for (Session& session : gSessions)
-        {
-            dbus::PortalReply reply;
-            if (dbus::MatchResponse(signal, session.requestPath, reply))
-            {
-                OnResponse(bus, session, reply);
-                advanced = true;
-                break;
-            }
-        }
+        dbus::PortalReply reply;
+        if (dbus::MatchResponse(signal, gRequestPath, reply))
+            OnResponse(bus, reply);
         return false;   // keep draining; more than one may be queued
     });
-
-    if (advanced)
-        Advance(bus);
 
     out.swap(gPending);
     gPending.clear();
@@ -318,11 +298,10 @@ void Drain(std::vector<hotkeys::Action>& out)
 
 std::string TakeError()
 {
-    // Only once every session has had its answer, so one message covers all
-    // of them rather than a modal per key.
-    for (const Session& session : gSessions)
-        if (session.stage != Stage::Bound && session.stage != Stage::Failed)
-            return std::string();
+    // Only once the desktop has answered, so the message is about a set that
+    // is finished rather than one still being approved.
+    if (gStage != Stage::Bound && gStage != Stage::Failed)
+        return std::string();
     std::string error;
     error.swap(gError);
     return error;

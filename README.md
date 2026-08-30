@@ -151,9 +151,12 @@ path at startup from the session it finds itself in:
     and choose the window (or a region, or a screen) in the desktop's UI.
     There is no window list because there is nothing to list.
   - **Global hotkeys** go through `org.freedesktop.portal.GlobalShortcuts`.
-    The combinations in Settings are a suggestion; the desktop shows a dialog
-    to approve or change them, and remembers the answer against the app id
-    (`org.daveshot.daveshot`). GNOME's dialog only works for an application it
+    The combinations in Settings are a suggestion; the desktop shows one
+    dialog to approve or change them both, and remembers the answer against
+    the app id (`org.daveshot.daveshot`) -- so it asks once, not on every
+    launch. Both keys go in one request because GNOME keeps a single set per
+    application and each request replaces it: asked for separately, each key
+    evicts the other and the desktop has to ask again every time. GNOME's dialog only works for an application it
     can look up, so register the staged folder once:
 
     ```sh
