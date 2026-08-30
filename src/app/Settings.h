@@ -42,15 +42,26 @@ namespace daveshot
         // hand-edited file falls back to the default instead of registering
         // something nobody can press.
         //
-        // PrintScreen is the obvious full-screen key, and on Linux desktops
-        // it is already taken -- GNOME binds it to its own screenshot UI and
-        // the portal refuses a key the shell holds -- so the Linux default is
-        // one nobody else has claimed.
+        // PrintScreen is the key people reach for, so it is a default on
+        // both platforms -- for the full screen on Windows, and for a region
+        // on Linux, which is the capture worth spending the good key on.
+        //
+        // It comes with a condition on Linux: GNOME holds Print for its own
+        // screenshot UI, and the portal will not hand over a key the shell
+        // has. Until it is freed the desktop's dialog is where the user picks
+        // something else --
+        //
+        //     gsettings set org.gnome.shell.keybindings show-screenshot-ui "[]"
+        //
+        // -- and because the shortcuts are approved as one set (see
+        // HotkeysPortal.cpp), a Print that is refused takes the other hotkey
+        // with it rather than failing on its own.
         bool        hotkeyEnabled = true;
-        std::string hotkeyRegion  = "Ctrl+Shift+S";
 #ifdef __linux__
+        std::string hotkeyRegion  = "PrintScreen";
         std::string hotkeyScreen  = "Ctrl+Alt+S";
 #else
+        std::string hotkeyRegion  = "Ctrl+Shift+S";
         std::string hotkeyScreen  = "PrintScreen";
 #endif
 

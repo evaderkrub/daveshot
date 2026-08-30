@@ -23,8 +23,9 @@ daveshot hides its own window while capturing and waits for the desktop to
 repaint, so it never appears in its own screenshots.
 
 **Global hotkeys** work while daveshot is behind whatever you want a picture
-of. `Ctrl+Shift+S` takes a region and `PrintScreen` takes the full screen by
-default; both are configurable, and a combination another application already
+of. `PrintScreen` takes a region and `Ctrl+Alt+S` takes the full screen by
+default on Linux; on Windows it is `Ctrl+Shift+S` for a region and
+`PrintScreen` for the full screen. Both are configurable, and a combination another application already
 owns is reported rather than silently ignored. (On Wayland the desktop owns the
 keys and asks you to approve them -- see *Linux* below.)
 
@@ -256,10 +257,20 @@ line and `src/app` free of ImGui.
   Linux it is X11 or the desktop portal, as described under *Building*. macOS
   has no platform layer.
 - **PrintScreen may already be taken.** Windows 11 binds it to the Snipping
-  Tool by default, GNOME binds it to its own screenshot UI, and on a machine
-  where something else holds a combination, the first to ask keeps it. If a
-  hotkey does nothing, pick another one in Settings — the tested-working
-  combinations here were `Ctrl+Shift+A` and the in-app buttons.
+  Tool by default, and GNOME binds it to its own screenshot UI, which is the
+  one thing standing between daveshot's Linux default and the key it asks
+  for. Free it once and the portal will hand it over:
+
+    ```sh
+    gsettings set org.gnome.shell.keybindings show-screenshot-ui "[]"
+    ```
+
+  `Shift+Print` and `Alt+Print` stay GNOME's, and `gsettings reset` puts it
+  back. Otherwise pick another combination in Settings -- but note that the
+  hotkeys are approved as one set, so a key the shell holds fails the other
+  one with it, and on a machine where something else holds a combination the
+  first to ask keeps it. If a hotkey does nothing, the in-app buttons always
+  work.
 - **On Wayland, the clipboard empties when daveshot quits.** A Wayland client
   serves its clipboard for as long as it runs; there is nowhere to leave the
   data behind. A clipboard manager keeps a copy; otherwise, save the file.
