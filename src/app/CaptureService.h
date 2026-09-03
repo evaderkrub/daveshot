@@ -30,4 +30,7 @@ namespace daveshot::capture
     bool Save(Shot& shot, const Settings& settings, std::string& error);
 
     bool Copy(const Shot& shot, std::string& error);
+
+    // The saved file's path as text. Fails on a shot that has no file yet.
+    bool CopyPath(const Shot& shot, std::string& error);
 }

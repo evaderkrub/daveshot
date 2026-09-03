@@ -105,6 +105,11 @@ namespace
             if (ImGui::IsItemHovered())
                 ImGui::SetTooltip("daveshot stays in the notification area and the hotkeys\n"
                                   "keep working. Quit from the tray icon or the File menu.");
+
+            ImGui::Checkbox("Show the window after a capture", &state.settings.showAfterCapture);
+            if (ImGui::IsItemHovered())
+                ImGui::SetTooltip("A hotkey capture taken from the tray brings the window up\n"
+                                  "with the shot, instead of leaving it in the tray.");
         }
         else
         {
@@ -201,7 +206,24 @@ namespace
         }
 
         ImGui::Checkbox("Save automatically", &s.autoSave);
-        ImGui::Checkbox("Copy to clipboard", &s.autoCopy);
+
+        // One choice rather than two boxes: the clipboard holds one thing,
+        // and two boxes that can both be ticked would promise otherwise.
+        enum Clip { Nothing, Picture, Path };
+        int clip = s.autoCopyPath ? Path : (s.autoCopy ? Picture : Nothing);
+        ImGui::TextUnformatted("Copy to clipboard");
+        ImGui::Indent();
+        ImGui::RadioButton("Nothing", &clip, Nothing);
+        ImGui::RadioButton("The picture", &clip, Picture);
+        ImGui::BeginDisabled(!s.autoSave);
+        ImGui::RadioButton("The file's path", &clip, Path);
+        ImGui::EndDisabled();
+        if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled))
+            ImGui::SetTooltip(s.autoSave ? "As text, for a message or a command line"
+                                         : "Needs a file to point at: turn on Save automatically");
+        ImGui::Unindent();
+        s.autoCopy     = (clip == Picture);
+        s.autoCopyPath = (clip == Path);
     }
 
     void DrawCaptureBehaviour(AppState& state)

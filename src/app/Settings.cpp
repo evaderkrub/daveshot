@@ -100,12 +100,14 @@ bool ParseSettings(const std::string& text, Settings& out)
         else if (key == "jpegquality")    out.jpegQuality = ClampJpegQuality(std::atoi(value.c_str()));
         else if (key == "autosave")       out.autoSave = ParseBool(value, out.autoSave);
         else if (key == "autocopy")       out.autoCopy = ParseBool(value, out.autoCopy);
+        else if (key == "autocopypath")   out.autoCopyPath = ParseBool(value, out.autoCopyPath);
         else if (key == "delayseconds")   out.delaySeconds = ClampDelaySeconds(std::atoi(value.c_str()));
         else if (key == "hideoncapture")  out.hideOnCapture = ParseBool(value, out.hideOnCapture);
         else if (key == "hotkeyenabled")  out.hotkeyEnabled = ParseBool(value, out.hotkeyEnabled);
         else if (key == "hotkeyregion" && !value.empty())    out.hotkeyRegion = value;
         else if (key == "hotkeyscreen" && !value.empty())    out.hotkeyScreen = value;
         else if (key == "closetotray")    out.closeToTray = ParseBool(value, out.closeToTray);
+        else if (key == "showaftercapture") out.showAfterCapture = ParseBool(value, out.showAfterCapture);
         else if (key == "historylimit")   out.historyLimit = ClampHistoryLimit(std::atoi(value.c_str()));
     }
     return true;
@@ -125,12 +127,14 @@ std::string SerializeSettings(const Settings& s)
     text += "jpegquality=";     text += std::to_string(ClampJpegQuality(s.jpegQuality));    text += "\n";
     text += "autosave=";        text += BoolKey(s.autoSave);      text += "\n";
     text += "autocopy=";        text += BoolKey(s.autoCopy);      text += "\n";
+    text += "autocopypath=";    text += BoolKey(s.autoCopyPath);  text += "\n";
     text += "delayseconds=";    text += std::to_string(ClampDelaySeconds(s.delaySeconds));  text += "\n";
     text += "hideoncapture=";   text += BoolKey(s.hideOnCapture); text += "\n";
     text += "hotkeyenabled=";   text += BoolKey(s.hotkeyEnabled); text += "\n";
     text += "hotkeyregion=";    text += s.hotkeyRegion;           text += "\n";
     text += "hotkeyscreen=";    text += s.hotkeyScreen;           text += "\n";
     text += "closetotray=";     text += BoolKey(s.closeToTray);   text += "\n";
+    text += "showaftercapture="; text += BoolKey(s.showAfterCapture); text += "\n";
     text += "historylimit=";    text += std::to_string(ClampHistoryLimit(s.historyLimit));  text += "\n";
     return text;
 }

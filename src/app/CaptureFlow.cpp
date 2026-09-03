@@ -12,11 +12,18 @@ namespace
     // neither happens to, because then the window is the only place it
     // exists. (A capture that failed is reported through the error modal,
     // which brings the window back on its own -- see the loop.)
+    //
+    // Unless asked: some people want to see the shot, and for them a
+    // finished capture is what brings the window up. A cancel still is not.
     bool StaysInTray(const AppState& state, bool tookShot)
     {
         if (!state.inTray)
             return false;
-        return !tookShot || state.settings.autoCopy || state.settings.autoSave;
+        if (!tookShot)
+            return true;
+        if (state.settings.showAfterCapture)
+            return false;
+        return state.settings.autoCopy || state.settings.autoSave;
     }
 
     // `tookShot` says whether a new capture went into the history on the
@@ -268,6 +275,18 @@ void ApplyPostCapture(AppState& state, Shot& shot)
         if (capture::Save(shot, state.settings, error))
         {
             status += "  -  saved";
+
+            // After the save, since it needs the path; after the picture,
+            // so that when a hand-edited file asks for both, the path is
+            // what ends up on the clipboard, as the setting promises.
+            if (state.settings.autoCopyPath)
+            {
+                std::string pathError;
+                if (capture::CopyPath(shot, pathError))
+                    status += "  -  path copied";
+                else if (failure.empty())
+                    failure = pathError;
+            }
         }
         else if (failure.empty())
         {

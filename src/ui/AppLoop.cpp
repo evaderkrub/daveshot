@@ -4,7 +4,6 @@
 #include "app/CaptureFlow.h"
 #include "app/CaptureService.h"
 #include "platform/Autostart.h"
-#include "platform/Clipboard.h"
 #include "platform/Host.h"
 #include "platform/Hotkeys.h"
 #include "platform/PrintScreenKey.h"
@@ -284,9 +283,7 @@ namespace
             if (const Shot* shot = CurrentShot(state))
             {
                 std::string error;
-                if (shot->savedPath.empty())
-                    ReportError(state, "that capture has not been saved yet");
-                else if (clipboard::CopyText(shot->savedPath, error))
+                if (capture::CopyPath(*shot, error))
                     state.status = "Copied the path";
                 else
                     ReportError(state, error);

@@ -114,4 +114,14 @@ bool Copy(const Shot& shot, std::string& error)
 {
     return clipboard::CopyImage(shot.image, error);
 }
+
+bool CopyPath(const Shot& shot, std::string& error)
+{
+    if (shot.savedPath.empty())
+    {
+        error = "that capture has not been saved yet";
+        return false;
+    }
+    return clipboard::CopyText(shot.savedPath, error);
+}
 }

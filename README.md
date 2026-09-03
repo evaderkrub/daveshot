@@ -44,7 +44,10 @@ there; the tray icon's menu opens the window, takes a capture, or quits. A
 capture that starts from the tray ends in the tray -- the shot is on the
 clipboard and on disk, and pressing a key for a picture should not also
 produce a window -- unless neither copy nor save is automatic, in which case
-the window is the only place the shot exists and it comes up. *Start with
+the window is the only place the shot exists and it comes up. *Show the
+window after a capture* in Settings makes it come up every time, for anyone
+who wants to see the shot; a cancelled capture still leaves the window
+where it was. *Start with
 Windows* / *Start at login* in Settings registers the program with the OS,
 started with `--background` so that signing in does not open a window; the
 registration names the executable's full path, so it follows whichever copy
@@ -58,8 +61,9 @@ is written to `Pictures/daveshot` as a timestamped PNG. All three are
 configurable — folder, filename pattern, PNG or JPEG with a quality setting,
 and whether the copy and the save happen automatically. `Copy path` puts the
 file's path on the clipboard as text, for when the file is going into a message
-or a command line rather than into a document. `Show in folder` opens the file
-manager with it selected.
+or a command line rather than into a document; it can also be what every
+capture puts on the clipboard, in place of the picture, if the save is
+automatic too. `Show in folder` opens the file manager with it selected.
 
 **History** keeps this session's captures as a thumbnail strip; clicking one
 brings it back into the preview. The limit is a memory decision as much as a

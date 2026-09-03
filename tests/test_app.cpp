@@ -79,10 +79,19 @@ void TestSettingsParsing()
 
     // Booleans accept the spellings a person would actually type.
     Settings b;
-    CHECK(ParseSettings("autosave=no\nautocopy=1\nhideoncapture=false\n", b));
+    CHECK(ParseSettings("autosave=no\nautocopy=1\nhideoncapture=false\n"
+                        "autocopypath=yes\nshowaftercapture=true\n", b));
     CHECK(!b.autoSave);
     CHECK(b.autoCopy);
     CHECK(!b.hideOnCapture);
+    CHECK(b.autoCopyPath);
+    CHECK(b.showAfterCapture);
+
+    // Neither of the new ones is on by default: the path would replace the
+    // picture on the clipboard, and the window would start appearing after
+    // hotkey captures that used to end in the tray.
+    CHECK(!Settings().autoCopyPath);
+    CHECK(!Settings().showAfterCapture);
 }
 
 void TestSettingsRoundTrip()
@@ -96,12 +105,14 @@ void TestSettingsRoundTrip()
     written.jpegQuality     = 72;
     written.autoSave        = false;
     written.autoCopy        = false;
+    written.autoCopyPath    = true;
     written.delaySeconds    = 5;
     written.hideOnCapture   = false;
     written.hotkeyEnabled   = false;
     written.hotkeyRegion    = "Ctrl+Alt+S";
     written.hotkeyScreen    = "None";
     written.closeToTray     = false;
+    written.showAfterCapture = true;
     written.historyLimit    = 25;
 
     Settings read;
@@ -114,12 +125,14 @@ void TestSettingsRoundTrip()
     CHECK(read.jpegQuality == written.jpegQuality);
     CHECK(read.autoSave == written.autoSave);
     CHECK(read.autoCopy == written.autoCopy);
+    CHECK(read.autoCopyPath == written.autoCopyPath);
     CHECK(read.delaySeconds == written.delaySeconds);
     CHECK(read.hideOnCapture == written.hideOnCapture);
     CHECK(read.hotkeyEnabled == written.hotkeyEnabled);
     CHECK(read.hotkeyRegion == written.hotkeyRegion);
     CHECK(read.hotkeyScreen == written.hotkeyScreen);
     CHECK(read.closeToTray == written.closeToTray);
+    CHECK(read.showAfterCapture == written.showAfterCapture);
     CHECK(read.historyLimit == written.historyLimit);
 }
 
@@ -749,6 +762,63 @@ void TestUnkeptShotBringsTheWindowBack()
     CHECK(!state.inTray);
 }
 
+// The person can ask for the window anyway. A kept shot then brings it up...
+void TestShowAfterCaptureBringsTheWindowBack()
+{
+    AppState state = QuietState();
+    state.settings.autoSave         = true;
+    state.settings.showAfterCapture = true;
+    state.inTray = true;
+    FakeEffects effects;
+
+    CaptureRequest request;
+    request.mode = CaptureMode::FullScreen;
+    RequestCapture(state, request, 10.0);
+    TickCapture(state, effects, 10.0 + kHideSettleSeconds + 0.01);
+
+    CHECK(state.phase == CapturePhase::Idle);
+    CHECK(state.history.shots.size() == 1);
+    CHECK(effects.shows == 1);
+    CHECK(!state.inTray);
+}
+
+// ...but a cancel still does not: there is nothing to show.
+void TestShowAfterCaptureIgnoresACancel()
+{
+    AppState state = QuietState();
+    state.settings.autoSave         = true;
+    state.settings.showAfterCapture = true;
+    state.inTray = true;
+    FakeEffects effects;
+
+    CaptureRequest request;
+    request.mode = CaptureMode::Region;
+    RequestCapture(state, request, 10.0);
+    TickCapture(state, effects, 10.0 + kHideSettleSeconds + 0.01);
+    CancelCapture(state, effects);
+
+    CHECK(effects.shows == 0);
+    CHECK(state.inTray);
+}
+
+// Copying the path needs a file. Without an automatic save there is none,
+// so the setting does nothing rather than failing every capture.
+void TestCopyPathWithoutASaveIsQuiet()
+{
+    AppState state = QuietState();
+    state.settings.autoCopyPath = true;
+    FakeEffects effects;
+
+    CaptureRequest request;
+    request.mode = CaptureMode::FullScreen;
+    RequestCapture(state, request, 10.0);
+    TickCapture(state, effects, 10.0 + kHideSettleSeconds + 0.01);
+
+    CHECK(state.history.shots.size() == 1);
+    CHECK(state.error.empty());
+    CHECK(state.status.find("path") == std::string::npos);
+}
+
 // With the window up, nothing about the tray applies: the sequence ends by
 // showing the window, as it always did.
 void TestCaptureWithTheWindowUpShowsIt()
@@ -841,6 +911,10 @@ void TestBarePrintScreen()
 void TestPrintKeyGoesStaleWithTheHotkeys()
 {
     AppState state;
+
+    // Off Print Screen first, so the next call is a change on every platform
+    // -- Linux already defaults the region hotkey to Print Screen.
+    SetHotkeys(state, "Ctrl+Shift+F9", state.settings.hotkeyScreen, true);
     state.printKeyStale = false;
 
     SetHotkeys(state, "PrintScreen", state.settings.hotkeyScreen, true);
@@ -921,6 +995,9 @@ int main(int argc, char** argv)
     TestCaptureFromTheTrayStaysThere();
     TestCancelledCaptureFromTheTrayStaysThere();
     TestUnkeptShotBringsTheWindowBack();
+    TestShowAfterCaptureBringsTheWindowBack();
+    TestShowAfterCaptureIgnoresACancel();
+    TestCopyPathWithoutASaveIsQuiet();
     TestCaptureWithTheWindowUpShowsIt();
 
     TestRevisions();

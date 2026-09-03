@@ -33,6 +33,11 @@ namespace daveshot
         // --- What happens on capture ---------------------------------------
         bool autoSave      = true;
         bool autoCopy      = true;
+        // The file's path as text, for a shot that is going into a message
+        // or a command line. The clipboard holds one thing, so this takes
+        // the place of the picture; and it needs a file to point at, so it
+        // does nothing unless the save is automatic too.
+        bool autoCopyPath  = false;
         int  delaySeconds  = 0;
         bool hideOnCapture = true;
 
@@ -72,6 +77,10 @@ namespace daveshot
         // here: that is a registration with the OS, not a value in this
         // file -- see platform/Autostart.h.
         bool closeToTray = true;
+        // A capture that starts from the tray normally ends there. This
+        // brings the window up with the shot instead, for people who want
+        // to see what they got.
+        bool showAfterCapture = false;
 
         // --- History -------------------------------------------------------
         int historyLimit = 12;
