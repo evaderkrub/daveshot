@@ -3,12 +3,15 @@
 #include "app/AppState.h"
 #include "app/CaptureFlow.h"
 #include "app/CaptureService.h"
+#include "platform/Autostart.h"
 #include "platform/Clipboard.h"
 #include "platform/Host.h"
 #include "platform/Hotkeys.h"
 #include "platform/PrintScreenKey.h"
 #include "platform/Paths.h"
 #include "platform/Screen.h"
+#include "platform/SingleInstance.h"
+#include "platform/Tray.h"
 #include "ui/Fonts.h"
 #include "ui/Textures.h"
 #include "ui/Theme.h"
@@ -18,11 +21,30 @@
 
 #include "imgui.h"
 
+#include <cstring>
+
 namespace daveshot::ui
 {
 namespace
 {
     constexpr float kBaseFontSize = 17.0f;
+
+    // How long the loop sleeps between looks while the window is in the
+    // tray. Short enough that a hotkey the OS cannot wake us for -- an X11
+    // grab arrives on a connection SDL is not watching -- still feels
+    // immediate; long enough that an idle daveshot costs nothing.
+    constexpr int kDormantWaitMs = 50;
+
+    // "--background": start in the tray, with no window. What the login
+    // entry passes, so that signing in does not open a window over
+    // whatever the person sat down to do.
+    bool WantsBackgroundStart(int argc, char** argv)
+    {
+        for (int i = 1; i < argc; ++i)
+            if (argv[i] != nullptr && std::strcmp(argv[i], "--background") == 0)
+                return true;
+        return false;
+    }
 
     // Nothing has a window yet when startup fails, so the message goes to the
     // OS rather than to the interface.
@@ -142,6 +164,18 @@ namespace
                                                  : printkey::Status{};
     }
 
+    // A capture asked for from outside the window -- a hotkey, the tray
+    // menu -- is aimed at whatever is on screen right now, so the window
+    // list has to be current for the overlay's click-a-window shortcut.
+    void RequestExternalCapture(AppState& state, CaptureMode mode)
+    {
+        if (CaptureInProgress(state))
+            return;
+        state.request.mode    = mode;
+        state.windowListStale = true;
+        state.pendingRequest  = true;
+    }
+
     void HandleHotkeys(AppState& state)
     {
         std::vector<hotkeys::Action> fired;
@@ -152,18 +186,45 @@ namespace
             ReportError(state, late);
 
         for (hotkeys::Action action : fired)
+            RequestExternalCapture(state, (action == hotkeys::Action_Region)
+                                              ? CaptureMode::Region
+                                              : CaptureMode::FullScreen);
+    }
+
+    void HandleTray(AppState& state)
+    {
+        std::vector<tray::Action> clicked;
+        tray::Drain(clicked);
+
+        for (tray::Action action : clicked)
         {
-            if (CaptureInProgress(state))
-                continue;
-            state.request.mode = (action == hotkeys::Action_Region)
-                               ? CaptureMode::Region
-                               : CaptureMode::FullScreen;
-            // A hotkey capture is aimed at whatever is on screen right now,
-            // so the window list has to be current for the overlay's
-            // click-a-window shortcut.
-            state.windowListStale = true;
-            state.pendingRequest  = true;
+            switch (action)
+            {
+            case tray::Action::Open:   state.openRequested = true; break;
+            case tray::Action::Region: RequestExternalCapture(state, CaptureMode::Region); break;
+            case tray::Action::Screen: RequestExternalCapture(state, CaptureMode::FullScreen); break;
+            case tray::Action::Quit:   state.quitRequested = true; break;
+            }
         }
+    }
+
+    // The close button means "put it away" when there is a tray to put it
+    // in and the setting says so, and "quit" otherwise -- which is what it
+    // meant before there was a tray.
+    void HandleCloseButton(AppState& state)
+    {
+        if (state.trayAvailable && state.settings.closeToTray)
+            state.putAwayRequested = true;
+        else
+            state.quitRequested = true;
+    }
+
+    void RefreshAutostart(AppState& state)
+    {
+        if (!state.autostartStale)
+            return;
+        state.autostartStale = false;
+        state.autostart      = autostart::Query();
     }
 
     // Acts on everything the interface asked for this frame. Kept in one
@@ -263,6 +324,51 @@ namespace
                     ReportError(state, "could not open " + shot->savedPath);
             }
         }
+
+        if (state.openRequested)
+        {
+            state.openRequested = false;
+            effects.ShowWindow();
+            state.inTray = false;
+        }
+
+        if (state.putAwayRequested)
+        {
+            state.putAwayRequested = false;
+            // Mid-capture the window is already where the sequence wants
+            // it, and the sequence puts it back; a request now would fight
+            // that. The close button during a countdown is rare enough to
+            // ignore rather than queue.
+            if (!CaptureInProgress(state) && state.trayAvailable)
+            {
+                effects.HideWindow();
+                state.inTray = true;
+
+                // Settings are otherwise written on the way out, and an
+                // application that lives in the tray may not get a way out
+                // -- sign-out gives it no time. The user has just "closed"
+                // it, and expects what they changed to be kept.
+                std::string saveError;
+                if (!state.settingsPath.empty() &&
+                    !SaveSettings(state.settingsPath, state.settings, saveError))
+                    ReportError(state, saveError);
+            }
+        }
+
+        if (state.autostartChangeRequested)
+        {
+            state.autostartChangeRequested = false;
+            std::string autostartError;
+            const bool ok = state.autostartWanted ? autostart::Enable(autostartError)
+                                                  : autostart::Disable(autostartError);
+            if (ok)
+                state.status = state.autostartWanted
+                             ? "daveshot will start when you sign in"
+                             : "daveshot will not start on its own";
+            else
+                ReportError(state, autostartError);
+            state.autostartStale = true;
+        }
     }
 }
 
@@ -275,6 +381,14 @@ int RunApplication(int argc, char** argv)
         ShowStartupFailure(error);
         return 1;
     }
+
+    // A second launch -- the Start menu while one daveshot is already in
+    // the tray -- has asked the first one to come forward, and has nothing
+    // left to do.
+    if (!instance::Claim())
+        return 0;
+
+    const bool background = WantsBackgroundStart(argc, argv);
 
     AppState state;
     state.settingsPath = paths::Beside("daveshot_settings.txt");
@@ -292,11 +406,25 @@ int RunApplication(int argc, char** argv)
     state.layoutPending = !paths::Exists(paths::Beside("daveshot_layout.ini"));
 
     Host host;
-    if (!host.Startup("daveshot", 1280, 800, error))
+    if (!host.Startup("daveshot", 1280, 800, !background, error))
     {
         ShowStartupFailure(error);
+        instance::Release();
         return 1;
     }
+
+    // No tray is not a failure: it means the close button quits, as it
+    // did before there was one. The settings panel says so.
+    std::string trayError;
+    state.trayAvailable = tray::Create(trayError);
+    if (!state.trayAvailable)
+        SDL_Log("daveshot: %s", trayError.c_str());
+
+    // A background start with nowhere to be in the background is an
+    // ordinary start.
+    state.inTray = background && state.trayAvailable;
+    if (background && !state.inTray)
+        host.Show();
 
     std::string fontError;
     if (!fonts::Load(kBaseFontSize, fontError) && state.error.empty())
@@ -313,11 +441,35 @@ int RunApplication(int argc, char** argv)
     {
         const double now = host.Now();
 
+        if (host.TakeCloseRequest())
+            HandleCloseButton(state);
+        if (instance::TakeWakeup())
+            state.openRequested = true;
+
         ApplyHotkeys(state);
         HandleHotkeys(state);
+        HandleTray(state);
         RefreshPrintKey(state);
         ApplyIntents(state, effects, now);
         TickCapture(state, effects, now);
+        RefreshAutostart(state);
+
+        // A problem is shown in a modal, and a modal needs the window.
+        if (state.inTray && !state.error.empty())
+        {
+            host.Show();
+            state.inTray = false;
+        }
+
+        // Nothing to draw while the window is away, and nothing to wait on
+        // but the next hotkey, tray click or knock from a second launch.
+        // The capture sequence is the exception: it hides the window and
+        // then times its next step, so it has to keep ticking.
+        if (state.inTray && !CaptureInProgress(state))
+        {
+            host.WaitForEvent(kDormantWaitMs);
+            continue;
+        }
 
         // Style and font scale are rebuilt between frames only. ScaleAllSizes
         // is not idempotent, and changing metrics mid-frame leaves the rest of
@@ -353,8 +505,10 @@ int RunApplication(int argc, char** argv)
 
     // Textures have to go before the renderer that owns them.
     textures.Clear();
+    tray::Destroy();
     hotkeys::Shutdown();
     host.Shutdown();
+    instance::Release();
     return 0;
 }
 }

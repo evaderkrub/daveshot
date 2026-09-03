@@ -26,11 +26,24 @@ namespace daveshot
         Host(const Host&)            = delete;
         Host& operator=(const Host&) = delete;
 
-        bool Startup(const char* title, int width, int height, std::string& error);
+        // `visible` false creates the window hidden, for a start straight
+        // into the tray: a window shown and then hidden flashes on screen.
+        bool Startup(const char* title, int width, int height, bool visible,
+                     std::string& error);
         void Shutdown();
 
-        // Drains the OS event queue. Returns false when the user asked to quit.
+        // Drains the OS event queue. Returns false when the OS asked us to
+        // quit -- the session ending, say. The close button is not that:
+        // it is reported through TakeCloseRequest, because what it means
+        // depends on a setting the loop holds.
         bool PumpEvents();
+        bool TakeCloseRequest();
+
+        // Sleeps until an event arrives or the timeout runs out. What the
+        // loop does instead of drawing while the window is in the tray:
+        // presenting to a hidden window does not wait for anything, and a
+        // loop that does not wait is a core at 100%.
+        void WaitForEvent(int timeoutMs);
 
         void BeginFrame();
         void EndFrame(float clearR, float clearG, float clearB);
@@ -43,6 +56,7 @@ namespace daveshot
         // --- Window ---------------------------------------------------------
         void Hide();
         void Show();
+        bool Hidden() const;
 
 #ifdef __linux__
         // The window in the form a desktop portal's `parent_window` argument
@@ -85,6 +99,7 @@ namespace daveshot
         SDL_Renderer* m_renderer = nullptr;
         bool          m_imguiBackendsUp = false;
         bool          m_running  = true;
+        bool          m_closeRequested = false;
         std::string   m_iniPath;   // ImGui keeps the pointer, so we own the storage
 
         bool m_inOverlay = false;

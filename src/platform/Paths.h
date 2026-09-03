@@ -16,6 +16,10 @@ namespace daveshot::paths
     // Directory containing the running executable, without a trailing slash.
     const std::string& ExeDir();
 
+    // The executable itself, in full. What gets registered with the OS for
+    // starting at login.
+    const std::string& ExePath();
+
     // ExeDir() + "/assets/" + relative.  e.g. Asset("fonts/OpenSans-Regular.ttf")
     std::string Asset(const std::string& relative);
 

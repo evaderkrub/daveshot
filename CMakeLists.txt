@@ -34,13 +34,16 @@ include(cmake/Warnings.cmake)
 # ---------------------------------------------------------------------------
 if(WIN32)
     set(DAVESHOT_PLATFORM_SOURCES
+        src/platform/win32/Autostart.cpp
         src/platform/win32/Clipboard.cpp
         src/platform/win32/Hotkeys.cpp
         src/platform/win32/ImageIo.cpp
         src/platform/win32/PrintScreenKey.cpp
-        src/platform/win32/Screen.cpp)
+        src/platform/win32/Screen.cpp
+        src/platform/win32/SingleInstance.cpp)
 elseif(CMAKE_SYSTEM_NAME STREQUAL "Linux")
     set(DAVESHOT_PLATFORM_SOURCES
+        src/platform/linux/Autostart.cpp
         src/platform/linux/Clipboard.cpp
         src/platform/linux/Dbus.cpp
         src/platform/linux/Hotkeys.cpp
@@ -53,6 +56,7 @@ elseif(CMAKE_SYSTEM_NAME STREQUAL "Linux")
         src/platform/linux/ScreenPortal.cpp
         src/platform/linux/ScreenX11.cpp
         src/platform/linux/Session.cpp
+        src/platform/linux/SingleInstance.cpp
         src/platform/linux/X11.cpp)
 else()
     message(FATAL_ERROR "daveshot builds for Windows and Linux; ${CMAKE_SYSTEM_NAME} has no platform layer")
@@ -73,6 +77,7 @@ add_library(daveshot_core STATIC
 
     src/platform/Host.cpp
     src/platform/Paths.cpp
+    src/platform/Tray.cpp
     ${DAVESHOT_PLATFORM_SOURCES}
 
     src/ui/AboutDialog.cpp

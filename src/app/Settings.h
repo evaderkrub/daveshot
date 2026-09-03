@@ -65,6 +65,14 @@ namespace daveshot
         std::string hotkeyScreen  = "PrintScreen";
 #endif
 
+        // --- Running in the background ---------------------------------------
+        // Closing the window puts daveshot in the notification area rather
+        // than ending it, so the hotkeys keep working. Quitting is a separate
+        // action, from the tray or the File menu. Starting at login is not
+        // here: that is a registration with the OS, not a value in this
+        // file -- see platform/Autostart.h.
+        bool closeToTray = true;
+
         // --- History -------------------------------------------------------
         int historyLimit = 12;
 

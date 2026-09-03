@@ -126,7 +126,17 @@ namespace
         {
             const int id = (int)msg->wParam;
             if (id == Action_Region || id == Action_Screen)
+            {
                 gPending.push_back((Action)id);
+
+                // While the window is in the tray the loop sleeps in
+                // SDL_WaitEvent, and a WM_HOTKEY makes no SDL event of its
+                // own -- so post one, and the loop comes round now rather
+                // than when its wait runs out.
+                SDL_Event wake{};
+                wake.type = SDL_EVENT_USER;
+                SDL_PushEvent(&wake);
+            }
         }
         return true;   // let SDL carry on with the message
     }

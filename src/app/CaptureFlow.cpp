@@ -6,8 +6,31 @@ namespace daveshot
 {
 namespace
 {
-    void Finish(AppState& state, CaptureEffects& effects)
+    // A capture that started from the tray goes back to the tray: the
+    // person pressed a key to get a picture, not to get a window, and the
+    // picture has been copied or saved. The one exception is a shot that
+    // neither happens to, because then the window is the only place it
+    // exists. (A capture that failed is reported through the error modal,
+    // which brings the window back on its own -- see the loop.)
+    bool StaysInTray(const AppState& state, bool tookShot)
     {
+        if (!state.inTray)
+            return false;
+        return !tookShot || state.settings.autoCopy || state.settings.autoSave;
+    }
+
+    // `tookShot` says whether a new capture went into the history on the
+    // way here, which is what decides whether the window is needed.
+    void Finish(AppState& state, CaptureEffects& effects, bool tookShot)
+    {
+        const bool stayAway = StaysInTray(state, tookShot);
+
+        // Hidden before the overlay comes down, not after: leaving the
+        // overlay puts the ordinary window's frame and size back, and doing
+        // that to a window that is on screen shows it for a frame.
+        if (stayAway)
+            effects.HideWindow();
+
         if (state.selecting || !state.backdrop.pixels.empty())
         {
             effects.LeaveOverlay();
@@ -15,7 +38,12 @@ namespace
             state.selecting = false;
             state.selection = Rect{};
         }
-        effects.ShowWindow();
+
+        if (!stayAway)
+        {
+            effects.ShowWindow();
+            state.inTray = false;
+        }
         state.phase = CapturePhase::Idle;
     }
 
@@ -30,14 +58,14 @@ namespace
         {
             ReportError(state, error);
             state.status = "Capture failed";
-            Finish(state, effects);
+            Finish(state, effects, false);
             return;
         }
 
         Shot shot = MakeShot(std::move(image), state.request.mode, source, LocalTimeNow());
         Shot& stored = AcceptShot(state, std::move(shot));
         ApplyPostCapture(state, stored);
-        Finish(state, effects);
+        Finish(state, effects, true);
     }
 
     void BeginRegion(AppState& state, CaptureEffects& effects)
@@ -47,7 +75,7 @@ namespace
         {
             ReportError(state, error);
             state.status = "Capture failed";
-            Finish(state, effects);
+            Finish(state, effects, false);
             return;
         }
 
@@ -55,7 +83,7 @@ namespace
         if (!effects.EnterOverlay(state.backdropBounds, covered, error))
         {
             ReportError(state, error);
-            Finish(state, effects);
+            Finish(state, effects, false);
             return;
         }
 
@@ -73,7 +101,7 @@ namespace
             if (visible.Empty() || !CropImage(state.backdrop, local, part))
             {
                 ReportError(state, "the overlay is not on the captured desktop");
-                Finish(state, effects);
+                Finish(state, effects, false);
                 return;
             }
             state.backdrop       = std::move(part);
@@ -136,7 +164,7 @@ void TickCapture(AppState& state, CaptureEffects& effects, double now)
             {
                 ReportError(state, error);
                 state.status = "Capture failed";
-                Finish(state, effects);
+                Finish(state, effects, false);
                 return;
             }
 
@@ -172,7 +200,7 @@ void TickCapture(AppState& state, CaptureEffects& effects, double now)
         return;
 
     case CapturePhase::Finishing:
-        Finish(state, effects);
+        Finish(state, effects, false);
         return;
     }
 }
@@ -182,7 +210,7 @@ void CancelCapture(AppState& state, CaptureEffects& effects)
     if (!CaptureInProgress(state))
         return;
     state.status = "Capture cancelled";
-    Finish(state, effects);
+    Finish(state, effects, false);
 }
 
 void CommitSelection(AppState& state, CaptureEffects& effects)
@@ -204,7 +232,7 @@ void CommitSelection(AppState& state, CaptureEffects& effects)
     if (!CropImage(state.backdrop, area, cropped))
     {
         ReportError(state, "that selection is outside the captured desktop");
-        Finish(state, effects);
+        Finish(state, effects, false);
         return;
     }
 
@@ -217,7 +245,7 @@ void CommitSelection(AppState& state, CaptureEffects& effects)
     Shot shot = MakeShot(std::move(cropped), CaptureMode::Region, source, LocalTimeNow());
     Shot& stored = AcceptShot(state, std::move(shot));
     ApplyPostCapture(state, stored);
-    Finish(state, effects);
+    Finish(state, effects, true);
 }
 
 void ApplyPostCapture(AppState& state, Shot& shot)

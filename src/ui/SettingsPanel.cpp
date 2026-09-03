@@ -2,6 +2,7 @@
 
 #include "app/AppState.h"
 #include "app/CaptureService.h"
+#include "platform/Autostart.h"
 #include "platform/Hotkeys.h"
 #include "platform/PrintScreenKey.h"
 #include "ui/Fonts.h"
@@ -90,6 +91,46 @@ namespace
             if (ImGui::IsItemHovered())
                 ImGui::SetTooltip("Restores the desktop's own screenshot shortcut");
         }
+    }
+
+    // Living in the tray, and starting at login. The second is a
+    // registration with the OS rather than a value in the settings file,
+    // so it follows the Print Screen pattern: the loop reads it, this
+    // shows it and asks for a change.
+    void DrawBackground(AppState& state)
+    {
+        if (state.trayAvailable)
+        {
+            ImGui::Checkbox("Keep running when the window is closed", &state.settings.closeToTray);
+            if (ImGui::IsItemHovered())
+                ImGui::SetTooltip("daveshot stays in the notification area and the hotkeys\n"
+                                  "keep working. Quit from the tray icon or the File menu.");
+        }
+        else
+        {
+            const theme::Palette& palette = theme::Current();
+            ImGui::PushStyleColor(ImGuiCol_Text, palette.textMuted);
+            ImGui::TextWrapped(ICON_MD_INFO_OUTLINE " No notification area was found, so "
+                               "closing the window quits daveshot.");
+            ImGui::PopStyleColor();
+        }
+
+        if (state.autostart == autostart::State::Unsupported)
+            return;
+
+        // Between the click and the loop acting on it the checkbox shows
+        // what was asked for, not what the OS still says; otherwise it
+        // flicks back for a frame.
+        bool on = state.autostartChangeRequested ? state.autostartWanted
+                                                 : state.autostart == autostart::State::On;
+        if (ImGui::Checkbox(autostart::Label(), &on))
+        {
+            state.autostartChangeRequested = true;
+            state.autostartWanted          = on;
+        }
+        if (ImGui::IsItemHovered())
+            ImGui::SetTooltip("Starts daveshot in the background when you sign in,\n"
+                              "so the hotkeys work from the first press.");
     }
 
     void DrawAppearance(AppState& state)
@@ -216,6 +257,9 @@ void DrawSettingsPanel(AppState& state)
 
     ImGui::SeparatorText(ICON_MD_KEYBOARD "  Capture");
     DrawCaptureBehaviour(state);
+
+    ImGui::SeparatorText(ICON_MD_NOTIFICATIONS "  Background");
+    DrawBackground(state);
 
     ImGui::SeparatorText(ICON_MD_SETTINGS "  Appearance");
     DrawAppearance(state);

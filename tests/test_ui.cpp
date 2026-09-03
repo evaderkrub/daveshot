@@ -11,6 +11,7 @@
 
 #include "app/AppState.h"
 #include "app/Capture.h"
+#include "platform/Autostart.h"
 #include "platform/Paths.h"
 #include "ui/Fonts.h"
 #include "ui/Panels.h"
@@ -485,6 +486,55 @@ namespace
             gState.backdrop.Reset();
             ctx->Yield(3);
             IM_CHECK(ImGui::FindWindowByName(ui::kWindowCapture)->Active);
+        };
+
+        t = IM_REGISTER_TEST(engine, "ui", "background_settings_raise_requests");
+        t->TestFunc = [](ImGuiTestContext* ctx)
+        {
+            // The loop reports what the OS said and the panel only reads
+            // it, so both halves can be driven on a machine with no tray
+            // and nothing registered.
+            gState.trayAvailable = true;
+            gState.autostart     = autostart::State::Off;
+            gState.autostartChangeRequested = false;
+            gState.settings.closeToTray = true;
+            gState.showSettings = true;
+            ctx->Yield(3);
+
+            ctx->SetRef(ui::kWindowSettings);
+            ctx->ItemClick("Keep running when the window is closed");
+            ctx->Yield(2);
+            IM_CHECK(!gState.settings.closeToTray);
+
+            // The panel never touches the registry: it says what is wanted
+            // and the loop does the registering.
+            ctx->ItemClick(autostart::Label());
+            ctx->Yield(2);
+            IM_CHECK(gState.autostartChangeRequested);
+            IM_CHECK(gState.autostartWanted);
+            gState.autostartChangeRequested = false;
+
+            // Without a tray there is no "keep running" to offer.
+            gState.trayAvailable = false;
+            ctx->Yield(4);
+            IM_CHECK(!ctx->ItemExists("Keep running when the window is closed"));
+
+            gState.settings.closeToTray = true;
+        };
+
+        t = IM_REGISTER_TEST(engine, "ui", "hide_to_tray_menu_asks_the_loop");
+        t->TestFunc = [](ImGuiTestContext* ctx)
+        {
+            gState.trayAvailable    = true;
+            gState.putAwayRequested = false;
+            ctx->Yield(2);
+
+            ctx->SetRef("##MainMenuBar");
+            ctx->MenuClick("File/HideToTray");
+            ctx->Yield(2);
+            IM_CHECK(gState.putAwayRequested);
+            gState.putAwayRequested = false;
+            gState.trayAvailable    = false;
         };
 
         t = IM_REGISTER_TEST(engine, "ui", "quit_menu_sets_the_flag");

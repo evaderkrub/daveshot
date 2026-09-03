@@ -203,4 +203,74 @@ bool Save(const std::string& path, const Image& image,
 
     return true;
 }
+
+bool Load(const std::string& path, Image& out, std::string& error)
+{
+    ComScope com;
+
+    ComPtr<IWICImagingFactory> factory;
+    HRESULT hr = CoCreateInstance(CLSID_WICImagingFactory, nullptr, CLSCTX_INPROC_SERVER,
+                                  IID_PPV_ARGS(factory.Out()));
+    if (FAILED(hr))
+    {
+        error = HresultText("creating the imaging factory", hr);
+        return false;
+    }
+
+    ComPtr<IWICBitmapDecoder> decoder;
+    hr = factory->CreateDecoderFromFilename(Utf8ToWide(path).c_str(), nullptr, GENERIC_READ,
+                                            WICDecodeMetadataCacheOnDemand, decoder.Out());
+    if (FAILED(hr))
+    {
+        error = "could not open " + path;
+        return false;
+    }
+
+    ComPtr<IWICBitmapFrameDecode> frame;
+    hr = decoder->GetFrame(0, frame.Out());
+    if (FAILED(hr))
+    {
+        error = HresultText("reading the image", hr) + " from " + path;
+        return false;
+    }
+
+    // Whatever the file holds -- palette, 24-bit, 16-bit per channel -- a
+    // converter hands it over in the one layout the rest of the program
+    // uses, and RGBA is a format WIC converts to directly.
+    ComPtr<IWICFormatConverter> converter;
+    hr = factory->CreateFormatConverter(converter.Out());
+    if (SUCCEEDED(hr))
+        hr = converter->Initialize(frame.ptr, GUID_WICPixelFormat32bppRGBA,
+                                   WICBitmapDitherTypeNone, nullptr, 0.0,
+                                   WICBitmapPaletteTypeCustom);
+    if (FAILED(hr))
+    {
+        error = HresultText("converting the image", hr);
+        return false;
+    }
+
+    UINT width = 0, height = 0;
+    hr = converter->GetSize(&width, &height);
+    if (FAILED(hr) || width == 0 || height == 0)
+    {
+        error = path + " has no pixels";
+        return false;
+    }
+
+    Image image;
+    image.width  = (int)width;
+    image.height = (int)height;
+    image.pixels.resize((size_t)width * (size_t)height * 4u);
+
+    const UINT stride = width * 4u;
+    hr = converter->CopyPixels(nullptr, stride, (UINT)image.pixels.size(), image.pixels.data());
+    if (FAILED(hr))
+    {
+        error = HresultText("reading the pixels", hr) + " from " + path;
+        return false;
+    }
+
+    out = std::move(image);
+    return true;
+}
 }

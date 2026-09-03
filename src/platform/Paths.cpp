@@ -25,6 +25,7 @@ namespace daveshot::paths
 namespace
 {
     std::string gExeDir;
+    std::string gExePath;
 
 #ifdef _WIN32
     std::wstring Utf8ToWide(const std::string& utf8)
@@ -104,6 +105,7 @@ bool Init(const char* argv0, std::string& error)
         path = argv0;
     }
 
+    gExePath = path;
     StripFilename(path);
     gExeDir = path;
     return true;
@@ -112,6 +114,11 @@ bool Init(const char* argv0, std::string& error)
 const std::string& ExeDir()
 {
     return gExeDir;
+}
+
+const std::string& ExePath()
+{
+    return gExePath;
 }
 
 std::string Asset(const std::string& relative)

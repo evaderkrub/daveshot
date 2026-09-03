@@ -45,4 +45,9 @@ bool Save(const std::string& path, const Image& image,
     }
     return true;
 }
+
+bool Load(const std::string& path, Image& out, std::string& error)
+{
+    return codec::DecodeFile(path, out, error);
+}
 }

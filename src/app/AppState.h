@@ -2,6 +2,7 @@
 
 #include "app/Capture.h"
 #include "app/Settings.h"
+#include "platform/Autostart.h"
 #include "platform/PrintScreenKey.h"
 #include "platform/Screen.h"
 
@@ -66,6 +67,24 @@ namespace daveshot
         printkey::Status printKey;
         bool             printKeyStale = true;
 
+        // --- Running in the background -------------------------------------
+        // Whether there is a notification area to put the window away in.
+        // The loop finds out once at startup; without one, closing the
+        // window quits, as it always did.
+        bool trayAvailable = false;
+
+        // True while the window has been put away. A capture that starts
+        // from here ends here -- see Finish in CaptureFlow -- and a problem
+        // that needs showing brings the window back, because the error
+        // modal has nowhere else to be.
+        bool inTray = false;
+
+        // Whether this executable starts at login, cached the same way the
+        // Print Screen answer is: reading it touches the registry or the
+        // filesystem, so the loop does it when this goes stale.
+        autostart::State autostart      = autostart::State::Unsupported;
+        bool             autostartStale = true;
+
         // --- Window visibility ---------------------------------------------
         bool showAbout    = false;   // always opened as a modal, see AboutDialog
         bool showSettings = true;
@@ -95,6 +114,17 @@ namespace daveshot
         // setting and then has to re-register the hotkeys behind it.
         bool takePrintKeyRequested = false;
         bool givePrintKeyRequested = false;
+
+        // The window coming back from the tray, or going there. Raised by
+        // the tray menu, the File menu and the close button; the loop moves
+        // the window and keeps inTray in step.
+        bool openRequested    = false;
+        bool putAwayRequested = false;
+
+        // Ticking or unticking "start at login". Raised by the settings
+        // panel with the value wanted; the loop registers with the OS.
+        bool autostartChangeRequested = false;
+        bool autostartWanted          = false;
 
         // --- Transient -----------------------------------------------------
         bool        quitRequested = false;

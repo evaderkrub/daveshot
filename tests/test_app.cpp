@@ -101,6 +101,7 @@ void TestSettingsRoundTrip()
     written.hotkeyEnabled   = false;
     written.hotkeyRegion    = "Ctrl+Alt+S";
     written.hotkeyScreen    = "None";
+    written.closeToTray     = false;
     written.historyLimit    = 25;
 
     Settings read;
@@ -118,6 +119,7 @@ void TestSettingsRoundTrip()
     CHECK(read.hotkeyEnabled == written.hotkeyEnabled);
     CHECK(read.hotkeyRegion == written.hotkeyRegion);
     CHECK(read.hotkeyScreen == written.hotkeyScreen);
+    CHECK(read.closeToTray == written.closeToTray);
     CHECK(read.historyLimit == written.historyLimit);
 }
 
@@ -680,6 +682,92 @@ void TestFailedGrabIsReportedAndRecovers()
 // ---------------------------------------------------------------------------
 // Style and hotkey revisions
 // ---------------------------------------------------------------------------
+// ---------------------------------------------------------------------------
+// Living in the tray
+// ---------------------------------------------------------------------------
+// A capture that starts with the window put away ends with it put away: the
+// person pressed a key for a picture, not for a window.
+void TestCaptureFromTheTrayStaysThere()
+{
+    AppState state = QuietState();
+    state.settings.autoSave = true;   // a cancel saves nothing, so nothing is written
+    state.inTray = true;
+    FakeEffects effects;
+
+    CaptureRequest request;
+    request.mode = CaptureMode::Region;
+    RequestCapture(state, request, 10.0);
+    TickCapture(state, effects, 10.0 + kHideSettleSeconds + 0.01);
+    CHECK(state.phase == CapturePhase::Selecting);
+    CHECK(effects.overlays == 1);
+
+    CancelCapture(state, effects);
+    CHECK(state.phase == CapturePhase::Idle);
+    CHECK(effects.leaves == 1);
+    CHECK(effects.shows == 0);
+    CHECK(state.inTray);
+
+    // The hide has to come before the overlay comes down, or the ordinary
+    // window is on screen for a frame between the two.
+    CHECK(effects.hides >= 1);
+}
+
+// A cancel leaves nothing behind, so it never needs the window -- whatever
+// the copy and save settings say.
+void TestCancelledCaptureFromTheTrayStaysThere()
+{
+    AppState state = QuietState();   // neither auto-copy nor auto-save
+    state.inTray = true;
+    FakeEffects effects;
+
+    CaptureRequest request;
+    request.mode = CaptureMode::Region;
+    RequestCapture(state, request, 10.0);
+    TickCapture(state, effects, 10.0 + kHideSettleSeconds + 0.01);
+    CancelCapture(state, effects);
+
+    CHECK(effects.shows == 0);
+    CHECK(state.inTray);
+}
+
+// A shot that is neither copied nor saved exists only in the window, so the
+// window has to come back for it.
+void TestUnkeptShotBringsTheWindowBack()
+{
+    AppState state = QuietState();
+    state.inTray = true;
+    FakeEffects effects;
+
+    CaptureRequest request;
+    request.mode = CaptureMode::FullScreen;
+    RequestCapture(state, request, 10.0);
+    TickCapture(state, effects, 10.0 + kHideSettleSeconds + 0.01);
+
+    CHECK(state.phase == CapturePhase::Idle);
+    CHECK(state.history.shots.size() == 1);
+    CHECK(effects.shows == 1);
+    CHECK(!state.inTray);
+}
+
+// With the window up, nothing about the tray applies: the sequence ends by
+// showing the window, as it always did.
+void TestCaptureWithTheWindowUpShowsIt()
+{
+    AppState state = QuietState();
+    state.settings.autoSave = true;
+    state.inTray = false;
+    FakeEffects effects;
+
+    CaptureRequest request;
+    request.mode = CaptureMode::Region;
+    RequestCapture(state, request, 10.0);
+    TickCapture(state, effects, 10.0 + kHideSettleSeconds + 0.01);
+    CancelCapture(state, effects);
+
+    CHECK(effects.shows == 1);
+    CHECK(!state.inTray);
+}
+
 void TestRevisions()
 {
     AppState state;
@@ -829,6 +917,11 @@ int main(int argc, char** argv)
     TestTinySelectionIsNotAShot();
     TestCancelRestoresTheWindow();
     TestFailedGrabIsReportedAndRecovers();
+
+    TestCaptureFromTheTrayStaysThere();
+    TestCancelledCaptureFromTheTrayStaysThere();
+    TestUnkeptShotBringsTheWindowBack();
+    TestCaptureWithTheWindowUpShowsIt();
 
     TestRevisions();
     TestHotkeyRevisions();

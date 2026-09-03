@@ -22,7 +22,8 @@ Host::~Host()
     Shutdown();
 }
 
-bool Host::Startup(const char* title, int width, int height, std::string& error)
+bool Host::Startup(const char* title, int width, int height, bool visible,
+                   std::string& error)
 {
     // The identifier is what Wayland and the desktop portals know the
     // window by; on Windows it is only metadata.
@@ -38,7 +39,8 @@ bool Host::Startup(const char* title, int width, int height, std::string& error)
         return false;
     }
 
-    const SDL_WindowFlags flags = SDL_WINDOW_RESIZABLE | SDL_WINDOW_HIGH_PIXEL_DENSITY;
+    const SDL_WindowFlags flags = SDL_WINDOW_RESIZABLE | SDL_WINDOW_HIGH_PIXEL_DENSITY
+                                | (visible ? 0 : SDL_WINDOW_HIDDEN);
     if (!SDL_CreateWindowAndRenderer(title, width, height, flags, &m_window, &m_renderer))
     {
         error = std::string("could not create the window: ") + SDL_GetError();
@@ -69,7 +71,8 @@ bool Host::Startup(const char* title, int width, int height, std::string& error)
     }
 #endif
 
-    SDL_ShowWindow(m_window);
+    if (visible)
+        SDL_ShowWindow(m_window);
 
 #ifdef __linux__
     // The portals need to be able to name our window -- see Session.h. The
@@ -136,12 +139,26 @@ bool Host::PumpEvents()
             m_running = false;
         else if (event.type == SDL_EVENT_WINDOW_CLOSE_REQUESTED &&
                  event.window.windowID == SDL_GetWindowID(m_window))
-            m_running = false;
+            m_closeRequested = true;
     }
 #ifdef __linux__
     clipboardretry::Tick(m_window);
 #endif
     return m_running;
+}
+
+bool Host::TakeCloseRequest()
+{
+    const bool requested = m_closeRequested;
+    m_closeRequested = false;
+    return requested;
+}
+
+void Host::WaitForEvent(int timeoutMs)
+{
+    // A null event leaves whatever arrived in the queue for PumpEvents to
+    // take in its usual order.
+    SDL_WaitEventTimeout(nullptr, timeoutMs);
 }
 
 void Host::BeginFrame()
@@ -206,6 +223,11 @@ void Host::Show()
         return;
     SDL_ShowWindow(m_window);
     SDL_RaiseWindow(m_window);
+}
+
+bool Host::Hidden() const
+{
+    return m_window == nullptr || (SDL_GetWindowFlags(m_window) & SDL_WINDOW_HIDDEN) != 0;
 }
 
 bool Host::EnterOverlay(const Rect& desktop, Rect& covered, std::string& error)

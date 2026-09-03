@@ -105,6 +105,7 @@ bool ParseSettings(const std::string& text, Settings& out)
         else if (key == "hotkeyenabled")  out.hotkeyEnabled = ParseBool(value, out.hotkeyEnabled);
         else if (key == "hotkeyregion" && !value.empty())    out.hotkeyRegion = value;
         else if (key == "hotkeyscreen" && !value.empty())    out.hotkeyScreen = value;
+        else if (key == "closetotray")    out.closeToTray = ParseBool(value, out.closeToTray);
         else if (key == "historylimit")   out.historyLimit = ClampHistoryLimit(std::atoi(value.c_str()));
     }
     return true;
@@ -129,6 +130,7 @@ std::string SerializeSettings(const Settings& s)
     text += "hotkeyenabled=";   text += BoolKey(s.hotkeyEnabled); text += "\n";
     text += "hotkeyregion=";    text += s.hotkeyRegion;           text += "\n";
     text += "hotkeyscreen=";    text += s.hotkeyScreen;           text += "\n";
+    text += "closetotray=";     text += BoolKey(s.closeToTray);   text += "\n";
     text += "historylimit=";    text += std::to_string(ClampHistoryLimit(s.historyLimit));  text += "\n";
     return text;
 }

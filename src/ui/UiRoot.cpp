@@ -48,7 +48,10 @@ namespace
                 state.copyRequested = true;
 
             ImGui::Separator();
-            if (ImGui::MenuItem(ICON_MD_CLOSE "  Quit###Quit", "Alt+F4"))
+            if (ImGui::MenuItem(ICON_MD_VISIBILITY_OFF "  Hide to tray###HideToTray", nullptr,
+                                false, state.trayAvailable && idle))
+                state.putAwayRequested = true;
+            if (ImGui::MenuItem(ICON_MD_CLOSE "  Quit###Quit", nullptr))
                 state.quitRequested = true;
             ImGui::EndMenu();
         }

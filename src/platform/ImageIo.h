@@ -22,4 +22,8 @@ namespace daveshot::imageio
     // quality is 1..100 and only applies to JPEG.
     bool Save(const std::string& path, const Image& image,
               Format format, int quality, std::string& error);
+
+    // Reads a PNG or JPEG into the application's one layout: RGBA,
+    // top-down, tightly packed. What the tray icon is loaded with.
+    bool Load(const std::string& path, Image& out, std::string& error);
 }

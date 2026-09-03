@@ -38,6 +38,21 @@ asks for the hotkey again. *Give Print Screen back* undoes it. Nothing is
 changed until the button is pressed: it is a setting on your machine, not
 in daveshot's file.
 
+**It runs in the background.** Closing the window puts daveshot in the
+notification area rather than ending it, and the hotkeys keep working from
+there; the tray icon's menu opens the window, takes a capture, or quits. A
+capture that starts from the tray ends in the tray -- the shot is on the
+clipboard and on disk, and pressing a key for a picture should not also
+produce a window -- unless neither copy nor save is automatic, in which case
+the window is the only place the shot exists and it comes up. *Start with
+Windows* / *Start at login* in Settings registers the program with the OS,
+started with `--background` so that signing in does not open a window; the
+registration names the executable's full path, so it follows whichever copy
+of the folder ticked the box. Launching daveshot while one is already running
+brings the running one forward instead of starting a second. While the
+window is away the loop sleeps between events rather than drawing, so an
+idle daveshot costs nothing.
+
 **After a capture** the shot appears in the preview, goes on the clipboard, and
 is written to `Pictures/daveshot` as a timestamped PNG. All three are
 configurable — folder, filename pattern, PNG or JPEG with a quality setting,
@@ -224,8 +239,10 @@ src/main.cpp          entry point, nothing else
 src/app/              application state and logic, no ImGui calls
 src/ui/               everything that draws
 src/platform/         anything that touches the OS directly
-src/platform/win32/   GDI, DWM, WIC, RegisterHotKey, the registry, the clipboard
-src/platform/linux/   X11, the desktop portal, gsettings, stb, SDL's clipboard
+src/platform/win32/   GDI, DWM, WIC, RegisterHotKey, the registry, the clipboard,
+                      the Run key, a named mutex
+src/platform/linux/   X11, the desktop portal, gsettings, stb, SDL's clipboard,
+                      ~/.config/autostart, an abstract unix socket
 assets/               fonts, icons, licences, the Linux desktop entry
 tests/                console test binaries
 ```
@@ -237,7 +254,8 @@ is what lets every panel be tested with no screen attached, and it is why
 `src/app/CaptureFlow.cpp` takes its effects through an interface rather than
 calling the platform layer directly.
 
-`src/platform/Host.cpp` and `src/platform/Paths.cpp` are shared between the
+`src/platform/Host.cpp`, `src/platform/Paths.cpp` and `src/platform/Tray.cpp`
+(SDL's tray API) are shared between the
 platforms; everything else that touches the OS has one file per platform under
 `src/platform/win32` and `src/platform/linux`, behind the same headers. On
 Linux, `Screen` and `Hotkeys` each pick between an X11 backend and a portal
@@ -290,6 +308,13 @@ line and `src/app` free of ImGui.
   fails the other one with it, and on a machine where something else holds a
   combination the first to ask keeps it. If a hotkey does nothing, the in-app
   buttons always work.
+- **The tray on Linux needs an app-indicator library.** SDL puts the icon
+  up through `libayatana-appindicator3` (or `libappindicator3`), loaded at
+  run time; on a desktop without one -- stock GNOME without the AppIndicator
+  extension -- there is no tray, Settings says so, and closing the window
+  quits as it did before there was one. The hotkeys and *Start at login*
+  work either way; a background start with no tray to start into simply
+  opens the window.
 - **On Wayland, the clipboard empties when daveshot quits.** A Wayland client
   serves its clipboard for as long as it runs; there is nowhere to leave the
   data behind. A clipboard manager keeps a copy; otherwise, save the file.
