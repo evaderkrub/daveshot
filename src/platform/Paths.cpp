@@ -287,7 +287,14 @@ bool EnsureFolder(const std::string& path, std::string& error)
 bool RevealInFileBrowser(const std::string& path)
 {
 #ifdef _WIN32
-    const std::wstring wide = Utf8ToWide(path);
+    std::wstring wide = Utf8ToWide(path);
+    // The shell parses paths as a namespace, not through the file APIs, and
+    // it takes backslashes only: ILCreateFromPathW gives nothing back for a
+    // forward-slashed path even though the file is right there.
+    for (wchar_t& c : wide)
+        if (c == L'/')
+            c = L'\\';
+
     // ILCreateFromPath + SHOpenFolderAndSelectItems selects the file rather
     // than merely opening its folder, which is what "show it to me" means.
     PIDLIST_ABSOLUTE item = ILCreateFromPathW(wide.c_str());
