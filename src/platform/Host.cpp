@@ -217,11 +217,25 @@ void Host::Hide()
         SDL_HideWindow(m_window);
 }
 
+// A minimised window is not a hidden one, and the two have to be undone
+// separately: showing does nothing to a window that is only minimised,
+// raising asks for the foreground without unfolding it, and a window
+// hidden while minimised comes back minimised. Called after any show.
+static void Unminimise(SDL_Window* window)
+{
+    if ((SDL_GetWindowFlags(window) & SDL_WINDOW_MINIMIZED) != 0)
+    {
+        SDL_RestoreWindow(window);
+        SDL_SyncWindow(window);
+    }
+}
+
 void Host::Show()
 {
     if (m_window == nullptr)
         return;
     SDL_ShowWindow(m_window);
+    Unminimise(m_window);
     SDL_RaiseWindow(m_window);
 }
 
@@ -267,6 +281,13 @@ bool Host::EnterOverlay(const Rect& desktop, Rect& covered, std::string& error)
     m_savedMaximised = (SDL_GetWindowFlags(m_window) & SDL_WINDOW_MAXIMIZED) != 0;
     if (m_savedMaximised)
         SDL_RestoreWindow(m_window);
+    // The window can be minimised here: a capture starts from a hotkey, and
+    // the window is wherever the user left it. Moves and sizes are dropped
+    // while it is, so it has to be unfolded before it is laid over the
+    // desktop. The position and size SDL keeps are the ones from before it
+    // was minimised, so they are still the right ones to go back to.
+    if (!Hidden())
+        Unminimise(m_window);
     SDL_GetWindowPosition(m_window, &m_savedGeometry.x, &m_savedGeometry.y);
     SDL_GetWindowSize(m_window, &m_savedGeometry.w, &m_savedGeometry.h);
 
@@ -279,6 +300,16 @@ bool Host::EnterOverlay(const Rect& desktop, Rect& covered, std::string& error)
     SDL_SetWindowPosition(m_window, desktop.x, desktop.y);
     SDL_SetWindowSize(m_window, desktop.w, desktop.h);
     SDL_ShowWindow(m_window);
+
+    // A window hidden while minimised comes back minimised, at its old
+    // size. Unfold it and lay it out again; the second time is a no-op
+    // when the first one took.
+    if ((SDL_GetWindowFlags(m_window) & SDL_WINDOW_MINIMIZED) != 0)
+    {
+        Unminimise(m_window);
+        SDL_SetWindowPosition(m_window, desktop.x, desktop.y);
+        SDL_SetWindowSize(m_window, desktop.w, desktop.h);
+    }
     SDL_RaiseWindow(m_window);
 
     m_inOverlay = true;
