@@ -62,7 +62,10 @@ namespace daveshot
         // set (see HotkeysPortal.cpp), so a Print the shell still holds takes
         // the other hotkey down with it rather than failing on its own.
         bool        hotkeyEnabled = true;
-#ifdef __linux__
+#if defined(__APPLE__)
+        std::string hotkeyRegion  = "Ctrl+Shift+S";
+        std::string hotkeyScreen  = "Ctrl+Alt+S";
+#elif defined(__linux__)
         std::string hotkeyRegion  = "PrintScreen";
         std::string hotkeyScreen  = "Ctrl+Alt+S";
 #else

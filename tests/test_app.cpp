@@ -945,7 +945,11 @@ void TestPaths()
     CHECK(!paths::ExeDir().empty());
     CHECK(paths::Asset("fonts/OpenSans-Regular.ttf")
               .rfind(paths::ExeDir(), 0) == 0);
+#ifdef __APPLE__
+    CHECK(paths::Beside("x.txt").find("/Library/Application Support/daveshot/x.txt") != std::string::npos);
+#else
     CHECK(paths::Beside("x.txt") == paths::ExeDir() + "/x.txt");
+#endif
 
     // The staging step should have put the fonts beside this binary.
     CHECK(paths::Exists(paths::Asset("fonts/OpenSans-Regular.ttf")));

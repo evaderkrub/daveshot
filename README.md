@@ -1,5 +1,53 @@
 # daveshot
 
+## macOS
+
+Requires macOS 14 or later, Xcode Command Line Tools (`xcode-select --install`),
+CMake 3.24+ and Ninja. If those tools are missing, an isolated install works
+without Homebrew (requires Python 3):
+
+```sh
+python3 -m venv "$HOME/buildfiles/daveshot/build-tools"
+"$HOME/buildfiles/daveshot/build-tools/bin/pip" install cmake ninja
+```
+
+The build script finds that tool directory automatically. Build and run:
+
+```sh
+./scripts/build.sh release
+open "$HOME/buildfiles/daveshot/macos-release/stage/daveshot.app"
+```
+
+Copy `daveshot.app` into Applications to keep it, and double-click that app to
+launch it without a Terminal window. The bundle includes its fonts,
+icons, SDL and ImGui; it needs no Homebrew libraries at runtime. Builds target the
+current Mac's architecture. This local build is ad-hoc signed, not notarized for distribution.
+
+The first capture asks for Screen Recording access. Allow **daveshot** in
+**System Settings → Privacy & Security → Screen & System Audio Recording**
+(the name varies by macOS version), then quit and reopen the app if requested.
+Capture uses Apple's [ScreenCaptureKit screenshot API](https://developer.apple.com/documentation/screencapturekit/scscreenshotmanager).
+
+- Region shortcut: **Control–Shift–S**. Full desktop: **Control–Option–S**.
+  Change these in Settings; Command shortcuts are also supported.
+- The menu bar icon keeps capture available when the main window is closed.
+- PNG/JPEG export, image/text clipboard, window capture, Finder reveal and
+  optional **Start at login** use native Mac services.
+- Preferences and layout live in `~/Library/Application Support/daveshot`;
+  screenshots default to `~/Pictures/daveshot`.
+- Desktop and region captures currently use one image pixel per logical desktop
+  point, including Retina displays. They do not preserve Retina's full physical
+  pixel resolution.
+
+`./scripts/build.sh debug` builds the app and runs the application-state, UI and Mac codec tests
+without requesting screen-recording permission or modifying the clipboard.
+
+On a logged-in Mac, `stage/daveshot_test_macos_window /tmp/daveshot-ui.bmp`
+inside the build directory also checks actual SDL rendering, Retina scaling and
+panel layout. It opens a temporary test window and optionally saves its rendered
+contents; it does not read the desktop or change the saved layout.
+
+
 A screen capture tool for Windows and Linux. C++20, SDL3 for the window and
 input, Dear ImGui (docking branch) for the interface. The build is a folder you
 can copy to another machine and run.

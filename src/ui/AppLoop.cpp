@@ -434,6 +434,7 @@ int RunApplication(int argc, char** argv)
     hotkeys::Install();
     RefreshTargets(state);
 
+    float appliedDisplayScale = 0.0f;
     while (host.PumpEvents() && !state.quitRequested)
     {
         const double now = host.Now();
@@ -471,12 +472,14 @@ int RunApplication(int argc, char** argv)
         // Style and font scale are rebuilt between frames only. ScaleAllSizes
         // is not idempotent, and changing metrics mid-frame leaves the rest of
         // that frame measured against the old ones.
-        if (StyleNeedsRebuild(state))
+        const float displayScale = host.DisplayScale();
+        if (StyleNeedsRebuild(state) || displayScale != appliedDisplayScale)
         {
             // The user's scale multiplies the display's own, so 125% in
             // Windows and 1.25x here compound the way the user expects.
             theme::Apply(theme::IndexByName(state.settings.theme.c_str()),
-                         state.settings.uiScale * host.DisplayScale());
+                         state.settings.uiScale * displayScale);
+            appliedDisplayScale = displayScale;
             MarkStyleApplied(state);
         }
 

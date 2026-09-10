@@ -24,6 +24,13 @@ endforeach()
 configure_file(cmake/Version.h.in
                "${CMAKE_BINARY_DIR}/generated/daveshot/Version.h" @ONLY)
 
+if(APPLE)
+    if(NOT CMAKE_OSX_DEPLOYMENT_TARGET)
+        set(CMAKE_OSX_DEPLOYMENT_TARGET "14.0" CACHE STRING "Minimum macOS version")
+    endif()
+    enable_language(OBJC OBJCXX)
+endif()
+
 include(cmake/Dependencies.cmake)
 include(cmake/Warnings.cmake)
 
@@ -32,7 +39,13 @@ include(cmake/Warnings.cmake)
 # reads the screen, owns a hotkey, writes an image or talks to the clipboard
 # has one file per OS under src/platform/<os>/.
 # ---------------------------------------------------------------------------
-if(WIN32)
+set(DAVESHOT_PATHS_SOURCE src/platform/Paths.cpp)
+if(APPLE)
+    set(CMAKE_OBJCXX_STANDARD 20)
+    set(CMAKE_OBJCXX_STANDARD_REQUIRED ON)
+    set(DAVESHOT_PATHS_SOURCE src/platform/macos/Paths.mm)
+    set(DAVESHOT_PLATFORM_SOURCES src/platform/macos/AppEvents.mm src/platform/macos/Platform.mm src/platform/macos/Screen.mm src/platform/macos/Hotkeys.mm)
+elseif(WIN32)
     set(DAVESHOT_PLATFORM_SOURCES
         src/platform/win32/Autostart.cpp
         src/platform/win32/Clipboard.cpp
@@ -59,7 +72,7 @@ elseif(CMAKE_SYSTEM_NAME STREQUAL "Linux")
         src/platform/linux/SingleInstance.cpp
         src/platform/linux/X11.cpp)
 else()
-    message(FATAL_ERROR "daveshot builds for Windows and Linux; ${CMAKE_SYSTEM_NAME} has no platform layer")
+    message(FATAL_ERROR "daveshot builds for Windows, macOS and Linux; ${CMAKE_SYSTEM_NAME} has no platform layer")
 endif()
 
 # ---------------------------------------------------------------------------
@@ -76,7 +89,7 @@ add_library(daveshot_core STATIC
     src/app/Settings.cpp
 
     src/platform/Host.cpp
-    src/platform/Paths.cpp
+    ${DAVESHOT_PATHS_SOURCE}
     src/platform/Tray.cpp
     ${DAVESHOT_PLATFORM_SOURCES}
 
@@ -115,6 +128,10 @@ if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
     target_link_libraries(daveshot_core PUBLIC
         daveshot_stb X11::X11 PkgConfig::DBUS Threads::Threads)
 endif()
+if(APPLE)
+    target_compile_options(daveshot_core PRIVATE "$<$<COMPILE_LANGUAGE:OBJCXX>:-fobjc-arc>")
+    target_link_libraries(daveshot_core PUBLIC "-framework Cocoa" "-framework ScreenCaptureKit" "-framework Carbon")
+endif()
 daveshot_set_warnings(daveshot_core)
 
 # ---------------------------------------------------------------------------
@@ -123,6 +140,17 @@ daveshot_set_warnings(daveshot_core)
 add_executable(daveshot src/main.cpp)
 target_link_libraries(daveshot PRIVATE daveshot_core)
 daveshot_set_warnings(daveshot)
+
+if(APPLE)
+    target_sources(daveshot PRIVATE assets/icons/daveshot.icns)
+    set_source_files_properties(assets/icons/daveshot.icns PROPERTIES MACOSX_PACKAGE_LOCATION Resources)
+    set_target_properties(daveshot PROPERTIES MACOSX_BUNDLE TRUE
+        MACOSX_BUNDLE_ICON_FILE daveshot.icns
+        MACOSX_BUNDLE_GUI_IDENTIFIER org.daveshot.daveshot
+        MACOSX_BUNDLE_BUNDLE_NAME daveshot
+        MACOSX_BUNDLE_BUNDLE_VERSION ${PROJECT_VERSION}
+        MACOSX_BUNDLE_SHORT_VERSION_STRING ${PROJECT_VERSION})
+endif()
 
 # GUI subsystem: no console window flashes up when launched from a shortcut.
 # SDL3 has no separate main library -- <SDL3/SDL_main.h>, included by main.cpp,
@@ -149,11 +177,23 @@ endif()
 
 # Assets are staged beside the executable on every build, so running from the
 # build tree exercises the same layout that gets copied to another machine.
+if(APPLE)
+    set(DAVESHOT_ASSET_DIR "$<TARGET_BUNDLE_CONTENT_DIR:daveshot>/Resources/assets")
+else()
+    set(DAVESHOT_ASSET_DIR "${DAVESHOT_STAGE_DIR}/assets")
+endif()
 add_custom_command(TARGET daveshot POST_BUILD
     COMMAND ${CMAKE_COMMAND} -E copy_directory
             "${CMAKE_CURRENT_SOURCE_DIR}/assets"
-            "${DAVESHOT_STAGE_DIR}/assets"
+            "${DAVESHOT_ASSET_DIR}"
     COMMENT "Staging assets beside the executable")
+
+if(APPLE)
+    add_custom_command(TARGET daveshot POST_BUILD
+        COMMAND /usr/bin/codesign --force --sign - --identifier org.daveshot.daveshot
+                "$<TARGET_BUNDLE_DIR:daveshot>"
+        COMMENT "Ad-hoc signing the Mac app bundle")
+endif()
 
 # ---------------------------------------------------------------------------
 # Tests.
@@ -164,5 +204,7 @@ add_subdirectory(tests)
 # ---------------------------------------------------------------------------
 # install() produces the same shape as the stage folder, for packaging.
 # ---------------------------------------------------------------------------
-install(TARGETS daveshot RUNTIME DESTINATION .)
-install(DIRECTORY assets DESTINATION .)
+install(TARGETS daveshot BUNDLE DESTINATION . RUNTIME DESTINATION .)
+if(NOT APPLE)
+    install(DIRECTORY assets DESTINATION .)
+endif()

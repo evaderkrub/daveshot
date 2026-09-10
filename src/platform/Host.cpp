@@ -3,6 +3,10 @@
 #include "daveshot/Version.h"
 #include "platform/Paths.h"
 
+#ifdef __APPLE__
+#  include "platform/macos/AppEvents.h"
+#endif
+
 #ifdef __linux__
 #  include "platform/linux/ClipboardRetry.h"
 #  include "platform/linux/ImageCodec.h"
@@ -49,6 +53,9 @@ bool Host::Startup(const char* title, int width, int height, bool visible,
     }
 
     SDL_SetRenderVSync(m_renderer, 1);
+#ifdef __APPLE__
+    macos::InstallReopenHandler();
+#endif
 
 #ifdef __linux__
     // Windows gets its icon from the resource compiled into the executable.
@@ -111,6 +118,9 @@ bool Host::Startup(const char* title, int width, int height, bool visible,
 
 void Host::Shutdown()
 {
+#ifdef __APPLE__
+    macos::RemoveReopenHandler();
+#endif
     if (m_imguiBackendsUp)
     {
         ImGui_ImplSDLRenderer3_Shutdown();
@@ -172,6 +182,10 @@ void Host::EndFrame(float clearR, float clearG, float clearB)
 {
     ImGui::Render();
 
+    // Match ImGui's logical vertices and clip rectangles to the drawable.
+    // The SDL renderer backend expects this scale to be set by its caller.
+    const ImVec2 framebufferScale = ImGui::GetIO().DisplayFramebufferScale;
+    SDL_SetRenderScale(m_renderer, framebufferScale.x, framebufferScale.y);
     SDL_SetRenderDrawColorFloat(m_renderer, clearR, clearG, clearB, 1.0f);
     SDL_RenderClear(m_renderer);
     ImGui_ImplSDLRenderer3_RenderDrawData(ImGui::GetDrawData(), m_renderer);
@@ -354,7 +368,11 @@ float Host::DisplayScale() const
     if (m_window == nullptr)
         return 1.0f;
     const float scale = SDL_GetWindowDisplayScale(m_window);
-    return (scale > 0.0f) ? scale : 1.0f;
+    const float density = SDL_GetWindowPixelDensity(m_window);
+    // ImGui lays out in SDL window coordinates and its renderer already
+    // multiplies by framebuffer density. Retina's 2x pixels must not also
+    // double the font and widget sizes in logical points.
+    return (scale > 0.0f && density > 0.0f) ? scale / density : 1.0f;
 }
 
 ImTextureID Host::CreateTexture(const Image& image)

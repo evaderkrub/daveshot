@@ -81,8 +81,8 @@ namespace daveshot
         // coordinate.
         void WindowPosition(int& x, int& y) const;
 
-        // The display's own scale factor, folded into the UI scale so 150% in
-        // Windows and 1.5x here compound the way a user expects.
+        // Content scale in logical window coordinates. Framebuffer pixel
+        // density is applied separately by the renderer (e.g. Retina's 2x).
         float DisplayScale() const;
 
         // --- Textures -------------------------------------------------------
