@@ -89,6 +89,7 @@ add_library(daveshot_core STATIC
     src/app/Settings.cpp
 
     src/platform/Host.cpp
+    src/platform/Log.cpp
     ${DAVESHOT_PATHS_SOURCE}
     src/platform/Tray.cpp
     ${DAVESHOT_PLATFORM_SOURCES}

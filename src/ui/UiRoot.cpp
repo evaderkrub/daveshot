@@ -17,6 +17,26 @@ namespace daveshot::ui
 // swapping an icon would break them.
 namespace
 {
+    // "Copy", from the window, puts on the clipboard what the settings say a
+    // capture puts there: the file's path when that is the choice, the
+    // picture otherwise. It used to be the picture regardless -- and a
+    // Ctrl+C a moment after a capture, with the window freshly back on top
+    // and holding the keyboard, quietly swapped the path the capture had
+    // just copied for the picture. The preview panel's two buttons stay
+    // explicit; this is only for the one shortcut and its menu item.
+    bool CopyMeansPath(const AppState& state)
+    {
+        return state.settings.autoSave && state.settings.autoCopyPath;
+    }
+
+    void RequestCopy(AppState& state)
+    {
+        if (CopyMeansPath(state))
+            state.copyPathRequested = true;
+        else
+            state.copyRequested = true;
+    }
+
     void DrawMenuBar(AppState& state)
     {
         if (!ImGui::BeginMainMenuBar())
@@ -44,8 +64,10 @@ namespace
             const bool haveShot = CurrentShot(state) != nullptr;
             if (ImGui::MenuItem(ICON_MD_SAVE "  Save###MenuSave", "Ctrl+S", false, haveShot))
                 state.saveRequested = true;
-            if (ImGui::MenuItem(ICON_MD_CONTENT_COPY "  Copy###MenuCopy", "Ctrl+C", false, haveShot))
-                state.copyRequested = true;
+            const char* copyLabel = CopyMeansPath(state) ? ICON_MD_CONTENT_COPY "  Copy path###MenuCopy"
+                                                         : ICON_MD_CONTENT_COPY "  Copy###MenuCopy";
+            if (ImGui::MenuItem(copyLabel, "Ctrl+C", false, haveShot))
+                RequestCopy(state);
 
             ImGui::Separator();
             if (ImGui::MenuItem(ICON_MD_VISIBILITY_OFF "  Hide to tray###HideToTray", nullptr,
@@ -144,7 +166,7 @@ namespace
         if (ImGui::IsKeyChordPressed(ImGuiMod_Ctrl | ImGuiKey_S))
             state.saveRequested = true;
         if (ImGui::IsKeyChordPressed(ImGuiMod_Ctrl | ImGuiKey_C))
-            state.copyRequested = true;
+            RequestCopy(state);
     }
 }
 

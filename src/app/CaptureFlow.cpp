@@ -2,6 +2,8 @@
 
 #include "app/CaptureService.h"
 
+#include <SDL3/SDL.h>
+
 namespace daveshot
 {
 namespace
@@ -301,5 +303,8 @@ void ApplyPostCapture(AppState& state, Shot& shot)
     // picture away.
     if (!failure.empty())
         ReportError(state, failure);
+
+    SDL_Log("daveshot: capture: %s%s%s", status.c_str(),
+            failure.empty() ? "" : " -- ", failure.c_str());
 }
 }

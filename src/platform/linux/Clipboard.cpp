@@ -118,6 +118,13 @@ bool CopyText(const std::string& text, std::string& error)
     }
     return true;
 }
+
+std::string TakeOverwriteNotice()
+{
+    // A Linux clipboard is an offer, not a store (see above), and the retry
+    // below already covers an offer that was not taken. Nothing to report.
+    return std::string();
+}
 }
 
 namespace daveshot::clipboardretry

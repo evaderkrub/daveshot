@@ -4,8 +4,10 @@
 #include "app/CaptureFlow.h"
 #include "app/CaptureService.h"
 #include "platform/Autostart.h"
+#include "platform/Clipboard.h"
 #include "platform/Host.h"
 #include "platform/Hotkeys.h"
+#include "platform/Log.h"
 #include "platform/PrintScreenKey.h"
 #include "platform/Paths.h"
 #include "platform/Screen.h"
@@ -385,6 +387,9 @@ int RunApplication(int argc, char** argv)
     if (!instance::Claim())
         return 0;
 
+    log::Install(paths::Beside("daveshot.log"));
+    SDL_Log("daveshot: started");
+
     const bool background = WantsBackgroundStart(argc, argv);
 
     AppState state;
@@ -451,6 +456,13 @@ int RunApplication(int argc, char** argv)
         ApplyIntents(state, effects, now);
         TickCapture(state, effects, now);
         RefreshAutostart(state);
+
+        // A copy another program overwrote a moment later pastes as if the
+        // copy had never happened. Say so, and say who, in place of the
+        // "copied" the status line is still showing.
+        const std::string overwritten = clipboard::TakeOverwriteNotice();
+        if (!overwritten.empty())
+            state.status = overwritten;
 
         // A problem is shown in a modal, and a modal needs the window.
         if (state.inTray && !state.error.empty())

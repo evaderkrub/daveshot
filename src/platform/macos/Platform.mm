@@ -52,6 +52,7 @@ bool CopyText(const std::string& text, std::string& error) {
         error = "could not write to the clipboard"; return false;
     }
 }
+std::string TakeOverwriteNotice() { return std::string(); }
 }
 namespace daveshot::printkey {
 Status Query() { return {}; }

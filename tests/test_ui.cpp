@@ -213,6 +213,34 @@ namespace
             gState.saveRequested = false;
         };
 
+        // Ctrl+C in the window copies what the settings say a capture copies.
+        // It used to copy the picture regardless, which is how a Ctrl+C just
+        // after a capture replaced the path the capture had put there.
+        t = IM_REGISTER_TEST(engine, "ui", "ctrl_c_follows_clipboard_setting");
+        t->TestFunc = [](ImGuiTestContext* ctx)
+        {
+            GiveOneShot();
+            gState.copyRequested     = false;
+            gState.copyPathRequested = false;
+            ctx->Yield(2);
+
+            gState.settings.autoSave     = true;
+            gState.settings.autoCopyPath = true;
+            ctx->SetRef(ui::kWindowPreview);
+            ctx->KeyPress(ImGuiMod_Ctrl | ImGuiKey_C);
+            ctx->Yield();
+            IM_CHECK(gState.copyPathRequested);
+            IM_CHECK(!gState.copyRequested);
+            gState.copyPathRequested = false;
+
+            gState.settings.autoCopyPath = false;
+            ctx->KeyPress(ImGuiMod_Ctrl | ImGuiKey_C);
+            ctx->Yield();
+            IM_CHECK(gState.copyRequested);
+            IM_CHECK(!gState.copyPathRequested);
+            gState.copyRequested = false;
+        };
+
         t = IM_REGISTER_TEST(engine, "ui", "reveal_is_locked_until_saved");
         t->TestFunc = [](ImGuiTestContext* ctx)
         {
